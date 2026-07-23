@@ -387,6 +387,9 @@ func Dial(ctx context.Context, dest net.Destination, streamSettings *internet.Me
 			if streamSettings.SocketSettings != nil && streamSettings.SocketSettings.Penetrate {
 				streamSettings.DownloadSettings.SocketSettings = streamSettings.SocketSettings
 			}
+			if w := internet.ThroneWiringFromContext(ctx); w != nil {
+				w.RegisterOutbound(streamSettings.DownloadSettings)
+			}
 		}
 		globalDialerAccess.Unlock()
 		memory2 := streamSettings.DownloadSettings
