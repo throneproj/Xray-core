@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/xtls/xray-core/features/dns"
+	"github.com/xtls/xray-core/features/outbound"
 	"github.com/xtls/xray-core/transport/internet"
 )
 
@@ -30,6 +31,20 @@ func init() {
 			return inst.throneWiring
 		}
 		return nil
+	})
+
+	// Same inversion for the two features the dial path needs. Reading them off the
+	// instance keeps a second instance (Throne builds one per URL-test batch) from
+	// taking over resolution and dialerProxy lookups for the one already running,
+	// which is what the InitSystemDialer globals did.
+	internet.SetInstanceFeatureResolver(func(ctx context.Context) (dns.Client, outbound.Manager) {
+		inst := FromContext(ctx)
+		if inst == nil {
+			return nil, nil
+		}
+		client, _ := inst.GetFeature(dns.ClientType()).(dns.Client)
+		manager, _ := inst.GetFeature(outbound.ManagerType()).(outbound.Manager)
+		return client, manager
 	})
 }
 

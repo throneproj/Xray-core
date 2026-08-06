@@ -7,6 +7,7 @@ import (
 
 	"github.com/xtls/xray-core/common/net"
 	"github.com/xtls/xray-core/features/dns"
+	"github.com/xtls/xray-core/features/outbound"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -167,6 +168,48 @@ func ThroneWiringFromContext(ctx context.Context) *ThroneWiring {
 		return resolve(ctx)
 	}
 	return nil
+}
+
+// instanceFeatureResolver recovers the DNS client and outbound manager belonging to
+// the Xray Instance carried in a dial context. Package core registers it at init via
+// SetInstanceFeatureResolver; this package cannot import core (import cycle), so the
+// dependency is inverted exactly as it is for instanceWiringResolver.
+//
+// The dial path used to read both from process globals that InitSystemDialer
+// overwrites on every core.New. Throne builds a second instance for each URL-test
+// batch, so those globals described the test instance while a profile was already
+// running — and kept pointing at its features after it was closed. Reading them off
+// the instance in ctx makes each instance resolve and dial through its own.
+var instanceFeatureResolver func(context.Context) (dns.Client, outbound.Manager)
+
+// SetInstanceFeatureResolver registers the instance-based feature lookup used by
+// instanceFeatures. It is called once by package core at init.
+func SetInstanceFeatureResolver(f func(context.Context) (dns.Client, outbound.Manager)) {
+	instanceFeatureResolver = f
+}
+
+// instanceFeatures returns the DNS client and outbound manager to use for ctx.
+// Either falls back to the InitSystemDialer globals on its own, so a context with
+// no instance (config validation, tests) behaves as it did before.
+func instanceFeatures(ctx context.Context) (dns.Client, outbound.Manager) {
+	var (
+		client  dns.Client
+		manager outbound.Manager
+	)
+	if resolve := instanceFeatureResolver; resolve != nil {
+		client, manager = resolve(ctx)
+	}
+	if client != nil && manager != nil {
+		return client, manager
+	}
+	fallbackClient, fallbackManager := systemDialerFeatures()
+	if client == nil {
+		client = fallbackClient
+	}
+	if manager == nil {
+		manager = fallbackManager
+	}
+	return client, manager
 }
 
 // isLoopbackDestination reports whether dest is a resolved loopback IP. Egress

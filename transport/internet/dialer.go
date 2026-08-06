@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/xtls/xray-core/common"
 	"github.com/xtls/xray-core/common/dice"
@@ -79,19 +80,34 @@ func DestIpAddress() net.IP {
 	return effectiveSystemDialer.DestIpAddress()
 }
 
+// Set by InitSystemDialer on every core.New, so with more than one live instance
+// they describe whichever was built last. They are only a fallback now: dial paths
+// that can reach an Instance read its features instead (see instanceFeatures).
+// The lock keeps a dial from reading them while a concurrent core.New writes.
 var (
-	dnsClient dns.Client
-	obm       outbound.Manager
+	systemDialerAccess sync.RWMutex
+	dnsClient          dns.Client
+	obm                outbound.Manager
 )
 
-func LookupForIP(domain string, strategy DomainStrategy, localAddr net.Address) ([]net.IP, error) {
-	return lookupForIPWithClient(dnsClient, domain, strategy, localAddr)
+func systemDialerFeatures() (dns.Client, outbound.Manager) {
+	systemDialerAccess.RLock()
+	defer systemDialerAccess.RUnlock()
+	return dnsClient, obm
 }
 
-// lookupForIPWithClient resolves domain through an explicit DNS client. It backs
-// both LookupForIP (using the instance's default DNS client) and Throne's
-// outbound domain resolution (using the wired throne-dns resolver).
-func lookupForIPWithClient(client dns.Client, domain string, strategy DomainStrategy, localAddr net.Address) ([]net.IP, error) {
+// LookupForIP resolves through the last-initialized instance's DNS client. Callers
+// that can reach their own Instance should use LookupForIPWithClient instead, so a
+// second instance cannot take over their resolution.
+func LookupForIP(domain string, strategy DomainStrategy, localAddr net.Address) ([]net.IP, error) {
+	client, _ := systemDialerFeatures()
+	return LookupForIPWithClient(client, domain, strategy, localAddr)
+}
+
+// LookupForIPWithClient resolves domain through an explicit DNS client. It backs
+// LookupForIP, Throne's outbound domain resolution (using the wired throne-dns
+// resolver) and every caller holding its own instance's client.
+func LookupForIPWithClient(client dns.Client, domain string, strategy DomainStrategy, localAddr net.Address) ([]net.IP, error) {
 	if client == nil {
 		return nil, errors.New("DNS client not initialized").AtError()
 	}
@@ -278,6 +294,10 @@ func DialSystem(ctx context.Context, dest net.Destination, sockopt *SocketConfig
 		return effectiveSystemDialer.Dial(ctx, src, dest, sockopt)
 	}
 
+	// Resolved past the early return above: the common dial never needs either and
+	// this costs a context lookup.
+	instanceDNS, instanceOBM := instanceFeatures(ctx)
+
 	if sockopt != nil {
 		if newDest, err := checkAddressPortStrategy(ctx, dest, sockopt); err == nil && newDest != nil {
 			errors.LogInfo(ctx, "replace destination with "+newDest.String())
@@ -290,7 +310,7 @@ func DialSystem(ctx context.Context, dest net.Destination, sockopt *SocketConfig
 	// resolve through it with the wired strategy. With neither, the domain is
 	// passed through to the system dialer unchanged (default behavior).
 	resolveStrategy := DomainStrategy_AS_IS
-	resolveClient := dnsClient
+	resolveClient := instanceDNS
 	if sockopt != nil && sockopt.DomainStrategy.HasStrategy() {
 		resolveStrategy = sockopt.DomainStrategy
 	} else if throneResolver != nil {
@@ -303,7 +323,7 @@ func DialSystem(ctx context.Context, dest net.Destination, sockopt *SocketConfig
 		if outboundName == "freedom" && dest.Network == net.Network_UDP && origTargetAddr != nil && src == nil {
 			finalStrategy = finalStrategy.GetDynamicStrategy(origTargetAddr.Family())
 		}
-		ips, err := lookupForIPWithClient(resolveClient, dest.Address.Domain(), finalStrategy, src)
+		ips, err := LookupForIPWithClient(resolveClient, dest.Address.Domain(), finalStrategy, src)
 		if err != nil {
 			errors.LogErrorInner(ctx, err, "failed to resolve ip")
 			if resolveStrategy.ForceIP() {
@@ -318,10 +338,10 @@ func DialSystem(ctx context.Context, dest net.Destination, sockopt *SocketConfig
 	}
 
 	if sockopt != nil && len(sockopt.DialerProxy) > 0 {
-		if obm == nil {
+		if instanceOBM == nil {
 			return nil, errors.New("there is no outbound manager for dialerProxy").AtError()
 		}
-		h := obm.GetHandler(sockopt.DialerProxy)
+		h := instanceOBM.GetHandler(sockopt.DialerProxy)
 		if h == nil {
 			return nil, errors.New("there is no outbound handler for dialerProxy").AtError()
 		}
@@ -332,6 +352,8 @@ func DialSystem(ctx context.Context, dest net.Destination, sockopt *SocketConfig
 }
 
 func InitSystemDialer(dc dns.Client, om outbound.Manager) {
+	systemDialerAccess.Lock()
+	defer systemDialerAccess.Unlock()
 	dnsClient = dc
 	obm = om
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/xtls/xray-core/common/serial"
 	"github.com/xtls/xray-core/common/session"
 	"github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/features/dns"
 	"github.com/xtls/xray-core/features/outbound"
 	"github.com/xtls/xray-core/features/policy"
 	"github.com/xtls/xray-core/features/stats"
@@ -64,6 +65,7 @@ type Handler struct {
 	proxyConfig     proto.Message
 	proxy           proxy.Outbound
 	outboundManager outbound.Manager
+	dnsClient       dns.Client
 	mux             *mux.ClientManager
 	xudp            *mux.ClientManager
 	udp443          string
@@ -75,9 +77,13 @@ type Handler struct {
 func NewHandler(ctx context.Context, config *core.OutboundHandlerConfig) (outbound.Handler, error) {
 	v := core.MustFromContext(ctx)
 	uplinkCounter, downlinkCounter := getStatCounter(v, config.Tag)
+	// Target resolution reads this instance's DNS client rather than the global one
+	// InitSystemDialer leaves behind, which a later core.New would have replaced.
+	dnsClient, _ := v.GetFeature(dns.ClientType()).(dns.Client)
 	h := &Handler{
 		tag:             config.Tag,
 		outboundManager: v.GetFeature(outbound.ManagerType()).(outbound.Manager),
+		dnsClient:       dnsClient,
 		uplinkCounter:   uplinkCounter,
 		downlinkCounter: downlinkCounter,
 	}
@@ -196,7 +202,7 @@ func (h *Handler) Dispatch(ctx context.Context, link *transport.Link) {
 		if ob.Target.Network == net.Network_UDP && ob.OriginalTarget.Address != nil {
 			strategy = strategy.GetDynamicStrategy(ob.OriginalTarget.Address.Family())
 		}
-		ips, err := internet.LookupForIP(ob.Target.Address.Domain(), strategy, nil)
+		ips, err := internet.LookupForIPWithClient(h.dnsClient, ob.Target.Address.Domain(), strategy, nil)
 		if err != nil {
 			errors.LogInfoInner(ctx, err, "failed to resolve ip for target ", ob.Target.Address.Domain())
 			if h.senderSettings.TargetStrategy.ForceIP() {
