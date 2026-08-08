@@ -12,31 +12,44 @@ import (
 )
 
 // ThroneWiring carries per-instance egress wiring that Throne injects onto a Xray
-// instance after core.New (before Start): the physical network interface that
-// outbound sockets bind their egress to, and a dedicated DNS resolver
-// ("throne-dns") plus a domain strategy used to resolve outbound server domains.
-// A pointer to this struct is seeded into the Xray instance context (see
-// core.initInstanceWithConfig) so it can be read without importing core, which
-// would be an import cycle.
+// instance after core.New (before Start): the egress conditions outbound sockets
+// dial under — the physical network interface they bind to and the fwmark they
+// carry — plus a dedicated DNS resolver ("throne-dns") and a domain strategy used
+// to resolve outbound server domains. A pointer to this struct is seeded into the
+// Xray instance context (see core.initInstanceWithConfig) so it can be read
+// without importing core, which would be an import cycle.
 //
-// The egress interface is written straight onto each outbound handler's
-// SocketConfig (RegisterOutbound), so Xray's native, per-OS socket-option apply
-// binds it on EVERY dial path — including ones that build and dial the socket
-// themselves, such as the Happy Eyeballs racer. This is deliberately not done by
+// Interface and mark are two halves of one thing and are always set together
+// (SetEgress). Under a sing-box TUN the interface alone is not enough: binding
+// picks the NIC a packet leaves on, but sing-tun's auto_redirect installs an
+// nftables OUTPUT chain that rewrites by destination address without ever looking
+// at the outgoing interface, and whose only exemption is a socket mark equal to
+// tun.DefaultAutoRedirectOutputMark. sing-box marks its own dialers with it; egress
+// that is bound but unmarked is DNAT'd straight back into the TUN, handed to the
+// proxy outbound and dialed again, which loops. Mark 0 means "nothing to exempt
+// from" and leaves a config's own sockopt.mark untouched.
+//
+// Both are written straight onto each outbound handler's SocketConfig
+// (RegisterOutbound), where Xray's native, per-OS socket-option apply consumes
+// them side by side (applyOutboundSocketOptions), so they are honored on EVERY
+// dial path — including ones that build and dial the socket themselves, such as
+// the Happy Eyeballs racer, and transports that carry their own stream settings,
+// such as gRPC and splithttp's download config. This is deliberately not done by
 // intercepting the shared dial choke point (DialSystem), whose branches can
-// return before a bind step would run and so would silently miss such paths (and
+// return before such a step would run and so would silently miss those paths (and
 // any new dial path Xray adds later).
 //
-// The bound interface is changeable at runtime (SetEgressInterface): when the
-// default route moves to another NIC, new dials pick up the change; existing
-// connections are not migrated, matching sing-box's auto_detect_interface.
+// The wiring is changeable at runtime (SetEgress): when the default route moves to
+// another NIC, new dials pick up the change; existing connections are not
+// migrated, matching sing-box's auto_detect_interface.
 //
-// All wiring is optional. Instances that never register an outbound or set an
-// interface (validation, latency/URL tests) simply dial unbound, exactly as
+// All wiring is optional. Instances that never register an outbound or set egress
+// (validation, latency/URL tests) simply dial unbound and unmarked, exactly as
 // before this mechanism existed.
 type ThroneWiring struct {
 	mu           sync.RWMutex
 	iface        string
+	mark         uint32
 	bindActive   bool
 	boundStreams []*MemoryStreamConfig
 	dnsResolver  dns.Client
@@ -44,9 +57,9 @@ type ThroneWiring struct {
 }
 
 // RegisterOutbound records an outbound handler's stream settings so its egress
-// socket is bound to the wiring's interface. Called once per outbound when the
-// handler is built. If an interface is already set it is applied immediately;
-// otherwise it is applied on the next SetEgressInterface.
+// socket takes the wiring's interface and mark. Called once per outbound when the
+// handler is built. If egress is already set it is applied immediately; otherwise
+// it is applied on the next SetEgress.
 func (w *ThroneWiring) RegisterOutbound(mss *MemoryStreamConfig) {
 	if mss == nil {
 		return
@@ -54,33 +67,40 @@ func (w *ThroneWiring) RegisterOutbound(mss *MemoryStreamConfig) {
 	w.mu.Lock()
 	w.boundStreams = append(w.boundStreams, mss)
 	if w.bindActive {
-		bindStreamInterface(mss, w.iface)
+		bindStreamEgress(mss, w.iface, w.mark)
 	}
 	w.mu.Unlock()
 }
 
-// SetEgressInterface sets the interface every registered outbound binds its
-// egress to, and marks binding active. Passing "" reports that no default
-// interface is currently available: outbounds are left unbound and DialSystem
-// refuses non-loopback dials (see bindState) instead of leaking egress onto the
-// default route — which, under TUN, is the tun itself. Safe to call at runtime
-// as the default route changes.
-func (w *ThroneWiring) SetEgressInterface(name string) {
+// SetEgress sets the interface every registered outbound binds its egress to and
+// the fwmark that egress carries, and marks binding active. Passing "" for name
+// reports that no default interface is currently available: outbounds are left
+// unbound and DialSystem refuses non-loopback dials (see bindState) instead of
+// leaking egress onto the default route — which, under TUN, is the tun itself.
+// Passing 0 for mark leaves each outbound's own sockopt.mark alone. Safe to call
+// at runtime as the default route changes.
+func (w *ThroneWiring) SetEgress(name string, mark uint32) {
 	w.mu.Lock()
 	w.iface = name
+	w.mark = mark
 	w.bindActive = true
 	for _, mss := range w.boundStreams {
-		bindStreamInterface(mss, name)
+		bindStreamEgress(mss, name, mark)
 	}
 	w.mu.Unlock()
 }
 
-// bindStreamInterface points mss.SocketSettings at a copy that carries iface,
-// leaving every other socket option intact. The whole *SocketConfig pointer is
-// replaced in a single write rather than mutating the live config's Interface
-// string in place, so a concurrent dial reading mss.SocketSettings observes
-// either the old config or the new one as a whole, never a half-updated one.
-func bindStreamInterface(mss *MemoryStreamConfig, iface string) {
+// bindStreamEgress points mss.SocketSettings at a copy that carries iface and
+// mark, leaving every other socket option intact. The whole *SocketConfig pointer
+// is replaced in a single write rather than mutating the live config's fields in
+// place, so a concurrent dial reading mss.SocketSettings observes either the old
+// config or the new one as a whole, never a half-updated one.
+//
+// A zero mark is not written: there is then no auto_redirect to be exempted from,
+// and a custom config's own sockopt.mark must survive. A non-zero one does
+// overwrite it, matching sing-box, which rejects a config combining routing_mark
+// with tun.auto_redirect outright rather than honoring both.
+func bindStreamEgress(mss *MemoryStreamConfig, iface string, mark uint32) {
 	var sc *SocketConfig
 	if mss.SocketSettings != nil {
 		sc = proto.Clone(mss.SocketSettings).(*SocketConfig)
@@ -88,6 +108,9 @@ func bindStreamInterface(mss *MemoryStreamConfig, iface string) {
 		sc = &SocketConfig{}
 	}
 	sc.Interface = iface
+	if mark != 0 {
+		sc.Mark = int32(mark)
+	}
 	mss.SocketSettings = sc
 }
 
@@ -104,6 +127,7 @@ func (w *ThroneWiring) SetDNS(resolver dns.Client, strategy DomainStrategy) {
 func (w *ThroneWiring) Clear() {
 	w.mu.Lock()
 	w.iface = ""
+	w.mark = 0
 	w.bindActive = false
 	w.dnsResolver = nil
 	w.dnsStrategy = DomainStrategy_AS_IS
@@ -111,8 +135,8 @@ func (w *ThroneWiring) Clear() {
 }
 
 // bindState reports the current egress interface and whether binding is active,
-// for the DialSystem no-interface guard. active is true once SetEgressInterface
-// has been called; a "" name then means "no default interface right now".
+// for the DialSystem no-interface guard. active is true once SetEgress has been
+// called; a "" name then means "no default interface right now".
 func (w *ThroneWiring) bindState() (iface string, active bool) {
 	w.mu.RLock()
 	defer w.mu.RUnlock()

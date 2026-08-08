@@ -48,17 +48,20 @@ func init() {
 	})
 }
 
-// SetEgressInterface binds this instance's outbound egress sockets to the named
-// physical interface. Call it after New (before or after Start) and again
-// whenever the default route moves — new dials pick up the change. Passing ""
-// reports that no default interface is available, which makes non-loopback dials
-// fail rather than leak onto the default route (the tun, under TUN). The bind is
-// written onto each outbound's SocketConfig, so it is honored on every dial path.
-// Instances left unwired (e.g. latency/URL tests) keep the default un-bound
-// behavior.
-func (s *Instance) SetEgressInterface(name string) {
+// SetEgress binds this instance's outbound egress sockets to the named physical
+// interface and stamps them with the given fwmark. Call it after New (before or
+// after Start) and again whenever the default route moves — new dials pick up the
+// change. Passing "" for name reports that no default interface is available,
+// which makes non-loopback dials fail rather than leak onto the default route (the
+// tun, under TUN); passing 0 for mark leaves each outbound's own sockopt.mark
+// alone. Both are written onto each outbound's SocketConfig, so they are honored
+// on every dial path. Under a sing-box TUN the mark is what exempts egress from
+// auto_redirect's nftables OUTPUT chain, which interface binding does not affect —
+// see ThroneWiring. Instances left unwired (e.g. latency/URL tests) keep the
+// default unbound, unmarked behavior.
+func (s *Instance) SetEgress(name string, mark uint32) {
 	if s.throneWiring != nil {
-		s.throneWiring.SetEgressInterface(name)
+		s.throneWiring.SetEgress(name, mark)
 	}
 }
 
