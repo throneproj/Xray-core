@@ -32,7 +32,7 @@ func setTFO(fd syscall.Handle, tfo int) error {
 }
 
 func applyOutboundSocketOptions(network string, address string, fd uintptr, config *SocketConfig) error {
-	if config.Interface != "" {
+	if config.Interface != "" && !IsLoopbackAddrPort(address) {
 		inf, err := net.InterfaceByName(config.Interface)
 		if err != nil {
 			return errors.New("failed to find the interface").Base(err)

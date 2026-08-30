@@ -20,7 +20,7 @@ func applyOutboundSocketOptions(network string, address string, fd uintptr, conf
 		}
 	}
 
-	if config.Interface != "" {
+	if config.Interface != "" && !IsLoopbackAddrPort(address) {
 		if err := syscall.BindToDevice(int(fd), config.Interface); err != nil {
 			return errors.New("failed to set Interface").Base(err)
 		}

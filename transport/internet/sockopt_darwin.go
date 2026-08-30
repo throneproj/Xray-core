@@ -133,7 +133,7 @@ func applyOutboundSocketOptions(network string, address string, fd uintptr, conf
 		}
 	}
 
-	if config.Interface != "" {
+	if config.Interface != "" && !IsLoopbackAddrPort(address) {
 		iface, err := net.InterfaceByName(config.Interface)
 		if err != nil {
 			return errors.New("failed to get interface ", config.Interface).Base(err)

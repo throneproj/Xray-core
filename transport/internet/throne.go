@@ -236,16 +236,40 @@ func instanceFeatures(ctx context.Context) (dns.Client, outbound.Manager) {
 	return client, manager
 }
 
-// isLoopbackDestination reports whether dest is a resolved loopback IP. Egress
-// interface binding must be skipped for such destinations (e.g. the 127.x
-// loopback SOCKS bridges between sing-box and Xray), because binding a loopback
-// dial to a physical interface breaks the connection.
+// isLoopbackDestination reports whether dest is a resolved loopback IP, for the
+// DialSystem no-interface guard. Domains report false: the guard runs before
+// resolution, and a domain is assumed to be remote.
 func isLoopbackDestination(dest net.Destination) bool {
 	addr := dest.Address
 	if addr == nil || addr.Family().IsDomain() {
 		return false
 	}
 	return addr.IP().IsLoopback()
+}
+
+// IsLoopbackAddrPort reports whether address is a loopback IP. It takes the
+// "ip:port" string applyOutboundSocketOptions is given, which is always the
+// *resolved* peer: the TCP path gets it from net.Dialer.Control (called after
+// resolution) and the UDP path passes the resolved destAddr explicitly.
+//
+// Egress interface binding must be skipped for such destinations — the 127.x
+// SOCKS bridges between sing-box and Xray above all, but equally a user config
+// dialing loopback — because pinning a loopback dial to a physical interface
+// breaks it: Windows fails the connect outright with WSAEADDRNOTAVAIL ("The
+// requested address is not valid in its context"), and SO_BINDTODEVICE /
+// IP_BOUND_IF black-hole it on Linux and macOS. The socket mark is deliberately
+// still applied: it exempts from auto_redirect and is harmless on loopback.
+//
+// A hostname that reaches here (no resolution happened, so it is being handed to
+// the system resolver) reports false — it is assumed remote, matching
+// isLoopbackDestination.
+func IsLoopbackAddrPort(address string) bool {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		host = address
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // ParseDomainStrategy maps an Xray-style domainStrategy string (e.g. "UseIP",
