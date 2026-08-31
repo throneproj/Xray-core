@@ -8,17 +8,6 @@ import (
 	"github.com/xtls/xray-core/transport/internet"
 )
 
-// outboundDNSInstanceAware is implemented by throne-dns resolvers that need a
-// context carrying this Instance. Xray's app/dns nameservers require the Instance
-// in the query context (toDnsContext -> ToBackgroundDetachedContext ->
-// MustFromContext); a resolver built outside the instance (throne.NewResolver)
-// cannot obtain it on its own, so SetOutboundDNS injects one. It is declared as a
-// local interface so core need not import the throne package, which would be an
-// import cycle via app/dns.
-type outboundDNSInstanceAware interface {
-	SetInstanceContext(ctx context.Context)
-}
-
 func init() {
 	// Let transport/internet recover an instance's egress wiring from the Instance
 	// carried in a dial context. This is the robust fallback for when the directly
@@ -65,18 +54,10 @@ func (s *Instance) SetEgress(name string, mark uint32) {
 	}
 }
 
-// SetOutboundDNS wires the resolver and strategy used to resolve outbound server
-// domains (Throne's "throne-dns"). Build the resolver with throne.NewResolver.
-// Passing a nil resolver disables outbound resolution, so the instance behaves
-// as if no domain strategy were set — the fallback used by test instances.
+// A nil resolver disables outbound resolution, so the instance behaves as if no domain strategy were set.
 func (s *Instance) SetOutboundDNS(resolver dns.Client, strategy internet.DomainStrategy) {
 	if s.throneWiring == nil {
 		return
-	}
-	// Hand the resolver a context carrying this Instance, which app/dns needs to
-	// build its query context. Without it, the first outbound-domain lookup panics.
-	if aware, ok := resolver.(outboundDNSInstanceAware); ok {
-		aware.SetInstanceContext(toContext(context.Background(), s))
 	}
 	s.throneWiring.SetDNS(resolver, strategy)
 }

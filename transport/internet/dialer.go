@@ -278,14 +278,7 @@ func DialSystem(ctx context.Context, dest net.Destination, sockopt *SocketConfig
 		bindIface, bindActive = wiring.bindState()
 	}
 
-	// The egress interface itself is bound via each outbound's SocketConfig (see
-	// ThroneWiring.RegisterOutbound), so it is honored on every dial path. All we
-	// do here is the "no interface" guard: when binding is active but no default
-	// interface is available right now, refuse to dial non-loopback destinations
-	// instead of leaking egress onto the default route — under TUN that route is
-	// the tun itself, so the dial would recurse back in and pile up dead
-	// connections. Loopback destinations (the throne-dns 127.x lookups) are
-	// always allowed.
+	// With no default interface, a non-loopback dial would leak onto the default route - under TUN, back into the tun.
 	if bindActive && bindIface == "" && !isLoopbackDestination(dest) {
 		return nil, errors.New("throne: no default interface available to bind egress")
 	}
