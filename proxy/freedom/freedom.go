@@ -23,6 +23,7 @@ import (
 	"github.com/xtls/xray-core/common/task"
 	"github.com/xtls/xray-core/common/utils"
 	"github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/features/dns"
 	"github.com/xtls/xray-core/features/policy"
 	"github.com/xtls/xray-core/features/stats"
 	"github.com/xtls/xray-core/proxy"
@@ -57,8 +58,10 @@ func init() {
 			h.resolveStrategy = streamSettings.SocketSettings.DomainStrategy
 			h.usesDialerProxy = len(streamSettings.SocketSettings.DialerProxy) > 0
 		}
-		if err := core.RequireFeatures(ctx, func(pm policy.Manager) error {
-			return h.Init(config.(*Config), pm)
+		// dns.Client comes from this instance so resolution cannot be hijacked by
+		// another instance built later in the same process.
+		if err := core.RequireFeatures(ctx, func(pm policy.Manager, dc dns.Client) error {
+			return h.Init(config.(*Config), pm, dc)
 		}); err != nil {
 			return nil, err
 		}
@@ -94,6 +97,7 @@ type FinalRule struct {
 // Handler handles Freedom connections.
 type Handler struct {
 	policyManager   policy.Manager
+	dnsClient       dns.Client
 	config          *Config
 	finalRules      []*FinalRule
 	resolveStrategy internet.DomainStrategy
@@ -187,9 +191,10 @@ func (h *Handler) matchFinalRule(network net.Network, address net.Address, port 
 }
 
 // Init initializes the Handler with necessary parameters.
-func (h *Handler) Init(config *Config, pm policy.Manager) error {
+func (h *Handler) Init(config *Config, pm policy.Manager, dc dns.Client) error {
 	h.config = config
 	h.policyManager = pm
+	h.dnsClient = dc
 	if h.usesDialerProxy { // freedom is not the final outbound, final rules do not apply
 		if len(config.FinalRules) > 0 {
 			errors.LogWarning(context.Background(), `The "finalRules" setting is ignored when "sockopt.dialerProxy" is set, since freedom is not the final outbound.`)
@@ -294,7 +299,7 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
 		if destination.Address.Family().IsDomain() {
 			if defaultRule != nil || len(h.finalRules) > 0 {
 				if strategy := h.resolveStrategy; strategy.HasStrategy() {
-					ips, err := internet.LookupForIP(destination.Address.Domain(), strategy, outGateway)
+					ips, err := internet.LookupForIPWithClient(h.dnsClient, destination.Address.Domain(), strategy, outGateway)
 					if err != nil { // non-force may still dial with system DNS
 						errors.LogInfoInner(ctx, err, "failed to get IP address for domain ", destination.Address.Domain())
 						if strategy.ForceIP() {
@@ -599,7 +604,7 @@ func (w *PacketWriter) WriteMultiBuffer(mb buf.MultiBuffer) error {
 				} else {
 					shouldUseSystemResolver := true
 					if strategy := w.Handler.resolveStrategy; strategy.HasStrategy() {
-						ips, err := internet.LookupForIP(b.UDP.Address.Domain(), strategy, w.OutGateway)
+						ips, err := internet.LookupForIPWithClient(w.Handler.dnsClient, b.UDP.Address.Domain(), strategy, w.OutGateway)
 						if err != nil {
 							// drop packet if resolve failed when forceIP
 							if strategy.ForceIP() {
