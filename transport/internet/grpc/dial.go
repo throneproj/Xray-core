@@ -123,6 +123,16 @@ func getGrpcClient(ctx context.Context, dest net.Destination, streamSettings *in
 			gctx = c.ContextWithID(gctx, c.IDFromContext(ctx))
 			gctx = session.ContextWithOutbounds(gctx, session.OutboundsFromContext(ctx))
 			gctx = session.ContextWithTimeoutOnly(gctx, true)
+			// grpc-go builds the dialer's context itself, so Xray's context values
+			// — the Instance and the Throne egress wiring — are absent from gctx.
+			// Carry the wiring over explicitly, like the session values above, so
+			// DialSystem still binds the egress interface and uses the outbound DNS
+			// resolver. Without this, gRPC egress leaks onto the system default
+			// route, which under TUN is the tun itself (looping). Other transports
+			// pass Xray's own ctx straight to DialSystem and don't need this.
+			if w := internet.ThroneWiringFromContext(ctx); w != nil {
+				gctx = internet.ContextWithThroneWiring(gctx, w)
+			}
 
 			c, err := internet.DialSystem(gctx, net.TCPDestination(address, port), sockopt)
 			if err == nil {
