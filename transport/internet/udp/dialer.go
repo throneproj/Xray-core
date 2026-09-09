@@ -37,7 +37,7 @@ func init() {
 				default:
 					panic(reflect.TypeOf(c))
 				}
-				newConn, err := streamSettings.UdpmaskManager.WrapPacketConnClient(pktConn)
+				newConn, err := streamSettings.UdpmaskManager.WrapPacketConnClient(ctx, pktConn)
 				if err != nil {
 					pktConn.Close()
 					return nil, errors.New("mask err").Base(err)

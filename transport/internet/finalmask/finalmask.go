@@ -23,7 +23,7 @@ func NewUdpmaskManager(udpmasks []Udpmask) *UdpmaskManager {
 	return &UdpmaskManager{udpmasks: udpmasks}
 }
 
-func (m *UdpmaskManager) WrapPacketConnClient(raw net.PacketConn) (net.PacketConn, error) {
+func (m *UdpmaskManager) WrapPacketConnClient(ctx context.Context, raw net.PacketConn) (net.PacketConn, error) {
 	var sizes []int
 	var conns []net.PacketConn
 	for i, mask := range m.udpmasks {
@@ -41,7 +41,11 @@ func (m *UdpmaskManager) WrapPacketConnClient(raw net.PacketConn) (net.PacketCon
 				conns = nil
 			}
 			var err error
-			raw, err = mask.WrapPacketConnClient(raw, i, len(m.udpmasks)-1)
+			if dm, ok := mask.(dialingUdpmask); ok {
+				raw, err = dm.WrapPacketConnClientContext(ctx, raw, i, len(m.udpmasks)-1)
+			} else {
+				raw, err = mask.WrapPacketConnClient(raw, i, len(m.udpmasks)-1)
+			}
 			if err != nil {
 				return nil, err
 			}
@@ -95,6 +99,13 @@ const (
 
 type headerConn interface {
 	HeaderConn()
+}
+
+// dialingUdpmask is implemented by masks that dial sockets of their own (udphop),
+// which need the dial context to reach the instance's Throne egress wiring. Kept
+// optional so the masks that only wrap a conn keep the plain Udpmask signature.
+type dialingUdpmask interface {
+	WrapPacketConnClientContext(ctx context.Context, raw net.PacketConn, level int, levelCount int) (net.PacketConn, error)
 }
 
 type headerSize interface {

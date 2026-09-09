@@ -2,6 +2,7 @@ package finalmask_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"io"
 	"net"
@@ -227,7 +228,7 @@ func newUDPClientServerPair(t *testing.T, cfg *custom.UDPStandaloneConfig) (net.
 
 	maskManager := finalmask.NewUdpmaskManager([]finalmask.Udpmask{cfg})
 
-	client, err := maskManager.WrapPacketConnClient(clientRaw)
+	client, err := maskManager.WrapPacketConnClient(context.Background(), clientRaw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -359,7 +360,7 @@ func TestPacketConnReadWrite(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			client, err = maskManager.WrapPacketConnClient(client)
+			client, err = maskManager.WrapPacketConnClient(context.Background(), client)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -411,7 +412,7 @@ func TestUDPcustomStaticHeaderWireShape(t *testing.T) {
 	}
 	defer serverRaw.Close()
 
-	client, err := maskManager.WrapPacketConnClient(clientRaw)
+	client, err := maskManager.WrapPacketConnClient(context.Background(), clientRaw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -903,7 +904,7 @@ func TestSudokuBDD(t *testing.T) {
 		}
 		defer serverRaw.Close()
 
-		client, err := maskManager.WrapPacketConnClient(clientRaw)
+		client, err := maskManager.WrapPacketConnClient(context.Background(), clientRaw)
 		if err != nil {
 			t.Fatal(err)
 		}

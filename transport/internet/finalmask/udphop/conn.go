@@ -34,6 +34,7 @@ type packet struct {
 }
 
 type udpHopConn struct {
+	ctx        context.Context
 	conn       net.PacketConn
 	sockopt    *internet.SocketConfig
 	local      bool
@@ -58,7 +59,7 @@ type udpHopConn struct {
 	mu      sync.Mutex
 }
 
-func NewUDPHopConn(c *Config, raw net.PacketConn) (net.PacketConn, error) {
+func NewUDPHopConn(ctx context.Context, c *Config, raw net.PacketConn) (net.PacketConn, error) {
 	if c.IntervalMin < 5 || c.IntervalMax < 5 {
 		return nil, errors.New("invalid interval")
 	}
@@ -67,6 +68,7 @@ func NewUDPHopConn(c *Config, raw net.PacketConn) (net.PacketConn, error) {
 		remoteIPs = append(remoteIPs, netip.MustParsePrefix(ip))
 	}
 	conn := &udpHopConn{
+		ctx:        ctx,
 		conn:       raw,
 		sockopt:    c.Sockopt,
 		local:      c.Local,
@@ -108,9 +110,9 @@ func (c *udpHopConn) hop(addr *net.UDPAddr) {
 		}
 	}
 	if c.local {
-		raw, err := internet.DialSystem(context.Background(), net.UDPDestination(net.IPAddress(newAddr.IP), net.Port(newAddr.Port)), c.sockopt)
+		raw, err := internet.DialSystem(c.ctx, net.UDPDestination(net.IPAddress(newAddr.IP), net.Port(newAddr.Port)), c.sockopt)
 		if err != nil {
-			errors.LogErrorInner(context.Background(), err, "hop err")
+			errors.LogErrorInner(c.ctx, err, "hop err")
 			return
 		}
 		switch c := raw.(type) {

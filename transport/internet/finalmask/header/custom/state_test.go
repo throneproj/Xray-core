@@ -2,6 +2,7 @@ package custom
 
 import (
 	"bytes"
+	"context"
 	"net"
 	"testing"
 	"time"
@@ -62,7 +63,7 @@ func TestStateUDPResponseReusesPriorCapturedValues(t *testing.T) {
 	}
 	defer serverRaw.Close()
 
-	client, err := maskManager.WrapPacketConnClient(clientRaw)
+	client, err := maskManager.WrapPacketConnClient(context.Background(), clientRaw)
 	if err != nil {
 		t.Fatal(err)
 	}

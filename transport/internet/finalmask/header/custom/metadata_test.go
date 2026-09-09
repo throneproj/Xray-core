@@ -2,6 +2,7 @@ package custom
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -156,7 +157,7 @@ func TestMetadataUDPStandaloneWriteUsesRemotePort(t *testing.T) {
 	}
 	defer serverRaw.Close()
 
-	client, err := finalmask.NewUdpmaskManager([]finalmask.Udpmask{cfg}).WrapPacketConnClient(clientRaw)
+	client, err := finalmask.NewUdpmaskManager([]finalmask.Udpmask{cfg}).WrapPacketConnClient(context.Background(), clientRaw)
 	if err != nil {
 		t.Fatal(err)
 	}
