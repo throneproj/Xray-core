@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/xtls/xray-core/common"
 	"github.com/xtls/xray-core/common/dice"
@@ -79,23 +80,45 @@ func DestIpAddress() net.IP {
 	return effectiveSystemDialer.DestIpAddress()
 }
 
+// Set by InitSystemDialer on every core.New, so with more than one live instance
+// they describe whichever was built last. They are only a fallback now: dial paths
+// that can reach an Instance read its features instead (see instanceFeatures).
+// The lock keeps a dial from reading them while a concurrent core.New writes.
 var (
-	dnsClient dns.Client
-	obm       outbound.Manager
+	systemDialerAccess sync.RWMutex
+	dnsClient          dns.Client
+	obm                outbound.Manager
 )
 
+func systemDialerFeatures() (dns.Client, outbound.Manager) {
+	systemDialerAccess.RLock()
+	defer systemDialerAccess.RUnlock()
+	return dnsClient, obm
+}
+
+// LookupForIP resolves through the last-initialized instance's DNS client. Callers
+// that can reach their own Instance should use LookupForIPWithClient instead, so a
+// second instance cannot take over their resolution.
 func LookupForIP(domain string, strategy DomainStrategy, localAddr net.Address) ([]net.IP, error) {
-	if dnsClient == nil {
+	client, _ := systemDialerFeatures()
+	return LookupForIPWithClient(client, domain, strategy, localAddr)
+}
+
+// LookupForIPWithClient resolves domain through an explicit DNS client. It backs
+// LookupForIP, Throne's outbound domain resolution (using the wired throne-dns
+// resolver) and every caller holding its own instance's client.
+func LookupForIPWithClient(client dns.Client, domain string, strategy DomainStrategy, localAddr net.Address) ([]net.IP, error) {
+	if client == nil {
 		return nil, errors.New("DNS client not initialized").AtError()
 	}
 
-	ips, _, err := dnsClient.LookupIP(domain, dns.IPOption{
+	ips, _, err := client.LookupIP(domain, dns.IPOption{
 		IPv4Enable: (localAddr == nil && strategy.PreferIP4()) || (localAddr != nil && localAddr.Family().IsIPv4() && (strategy.PreferIP4() || strategy.FallbackIP4())),
 		IPv6Enable: (localAddr == nil && strategy.PreferIP6()) || (localAddr != nil && localAddr.Family().IsIPv6() && (strategy.PreferIP6() || strategy.FallbackIP6())),
 	})
 	{ // Resolve fallback
 		if (len(ips) == 0 || err != nil) && strategy.HasFallback() && localAddr == nil {
-			ips, _, err = dnsClient.LookupIP(domain, dns.IPOption{
+			ips, _, err = client.LookupIP(domain, dns.IPOption{
 				IPv4Enable: strategy.FallbackIP4(),
 				IPv6Enable: strategy.FallbackIP6(),
 			})
@@ -239,27 +262,75 @@ func DialSystem(ctx context.Context, dest net.Destination, sockopt *SocketConfig
 			origTargetAddr = ob.Target.Address
 		}
 	}
-	if sockopt == nil {
+	// Throne per-instance egress wiring (dynamic interface finder + outbound
+	// DNS resolver), injected onto the instance after core.New. It is nil for
+	// validation and latency/URL-test instances, which fall back to the plain
+	// dial path below.
+	wiring := ThroneWiringFromContext(ctx)
+	var (
+		throneResolver dns.Client
+		throneStrategy DomainStrategy
+		bindIface      string
+		bindMark       uint32
+		bindActive     bool
+	)
+	if wiring != nil {
+		throneResolver, throneStrategy = wiring.dnsResolution()
+		bindIface, bindMark, bindActive = wiring.bindState()
+	}
+
+	// With no default interface, a non-loopback dial would leak onto the default route - under TUN, back into the tun.
+	if bindActive && bindIface == "" && !isLoopbackDestination(dest) {
+		return nil, errors.New("throne: no default interface available to bind egress")
+	}
+
+	// Ahead of every branch below: callers handing us a SocketConfig the wiring never
+	// registered (or none at all) would otherwise dial unbound. See ThroneWiring.
+	// Loopback is exempt for the same reason the per-OS appliers skip it.
+	if bindActive && bindIface != "" && !isLoopbackDestination(dest) {
+		sockopt = withEgressBind(sockopt, bindIface, bindMark)
+	}
+
+	if sockopt == nil && throneResolver == nil {
 		return effectiveSystemDialer.Dial(ctx, src, dest, sockopt)
 	}
 
-	if newDest, err := checkAddressPortStrategy(ctx, dest, sockopt); err == nil && newDest != nil {
-		errors.LogInfo(ctx, "replace destination with "+newDest.String())
-		dest = *newDest
+	// Resolved past the early return above: the common dial never needs either and
+	// this costs a context lookup.
+	instanceDNS, instanceOBM := instanceFeatures(ctx)
+
+	if sockopt != nil {
+		if newDest, err := checkAddressPortStrategy(ctx, dest, sockopt); err == nil && newDest != nil {
+			errors.LogInfo(ctx, "replace destination with "+newDest.String())
+			dest = *newDest
+		}
 	}
 
-	if sockopt.DomainStrategy.HasStrategy() && dest.Address.Family().IsDomain() {
-		finalStrategy := sockopt.DomainStrategy
+	// Resolve the outbound server domain. An explicit sockopt strategy (e.g.
+	// from a user's custom config) wins; otherwise, when throne-dns is wired,
+	// resolve through it with the wired strategy. With neither, the domain is
+	// passed through to the system dialer unchanged (default behavior).
+	resolveStrategy := DomainStrategy_AS_IS
+	resolveClient := instanceDNS
+	if sockopt != nil && sockopt.DomainStrategy.HasStrategy() {
+		resolveStrategy = sockopt.DomainStrategy
+	} else if throneResolver != nil {
+		resolveStrategy = throneStrategy
+		resolveClient = throneResolver
+	}
+
+	if resolveStrategy.HasStrategy() && dest.Address.Family().IsDomain() {
+		finalStrategy := resolveStrategy
 		if outboundName == "freedom" && dest.Network == net.Network_UDP && origTargetAddr != nil && src == nil {
 			finalStrategy = finalStrategy.GetDynamicStrategy(origTargetAddr.Family())
 		}
-		ips, err := LookupForIP(dest.Address.Domain(), finalStrategy, src)
+		ips, err := LookupForIPWithClient(resolveClient, dest.Address.Domain(), finalStrategy, src)
 		if err != nil {
 			errors.LogErrorInner(ctx, err, "failed to resolve ip")
-			if sockopt.DomainStrategy.ForceIP() {
+			if resolveStrategy.ForceIP() {
 				return nil, err
 			}
-		} else if sockopt.HappyEyeballs == nil || sockopt.HappyEyeballs.TryDelayMs == 0 || sockopt.HappyEyeballs.MaxConcurrentTry == 0 || len(ips) < 2 || len(sockopt.DialerProxy) > 0 || dest.Network != net.Network_TCP {
+		} else if sockopt == nil || sockopt.HappyEyeballs == nil || sockopt.HappyEyeballs.TryDelayMs == 0 || sockopt.HappyEyeballs.MaxConcurrentTry == 0 || len(ips) < 2 || len(sockopt.DialerProxy) > 0 || dest.Network != net.Network_TCP {
 			dest.Address = net.IPAddress(ips[dice.Roll(len(ips))])
 			errors.LogInfo(ctx, "replace destination with "+dest.String())
 		} else {
@@ -267,11 +338,11 @@ func DialSystem(ctx context.Context, dest net.Destination, sockopt *SocketConfig
 		}
 	}
 
-	if len(sockopt.DialerProxy) > 0 {
-		if obm == nil {
+	if sockopt != nil && len(sockopt.DialerProxy) > 0 {
+		if instanceOBM == nil {
 			return nil, errors.New("there is no outbound manager for dialerProxy").AtError()
 		}
-		h := obm.GetHandler(sockopt.DialerProxy)
+		h := instanceOBM.GetHandler(sockopt.DialerProxy)
 		if h == nil {
 			return nil, errors.New("there is no outbound handler for dialerProxy").AtError()
 		}
@@ -282,6 +353,8 @@ func DialSystem(ctx context.Context, dest net.Destination, sockopt *SocketConfig
 }
 
 func InitSystemDialer(dc dns.Client, om outbound.Manager) {
+	systemDialerAccess.Lock()
+	defer systemDialerAccess.Unlock()
 	dnsClient = dc
 	obm = om
 }
