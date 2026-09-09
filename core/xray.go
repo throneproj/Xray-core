@@ -88,6 +88,11 @@ type Instance struct {
 	resolveLock                sync.Mutex
 
 	ctx context.Context
+
+	// throneWiring carries post-New egress wiring (dynamic interface finder +
+	// outbound DNS resolver). A pointer to it is also seeded into ctx so the
+	// dial path in transport/internet can read it without importing core.
+	throneWiring *internet.ThroneWiring
 }
 
 // Instance state
@@ -192,6 +197,12 @@ func initInstanceWithConfig(config *Config, server *Instance) (bool, error) {
 	}
 	server.ctx = context.WithValue(server.ctx, "cone",
 		platform.NewEnvFlag(platform.UseCone).GetValue(func() string { return "" }) != "true")
+
+	// Seed the Throne egress wiring before any handler is created, so every
+	// handler's context (and thus every dial context derived from it) carries
+	// the pointer. The application populates it after New via the Set* methods.
+	server.throneWiring = &internet.ThroneWiring{}
+	server.ctx = internet.ContextWithThroneWiring(server.ctx, server.throneWiring)
 
 	for _, appSettings := range config.App {
 		settings, err := appSettings.GetInstance()
