@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/xtls/xray-core/common/errors"
 	"github.com/xtls/xray-core/common/net"
 	"github.com/xtls/xray-core/features/dns"
 	"github.com/xtls/xray-core/features/outbound"
@@ -368,4 +369,24 @@ func ParseDomainStrategy(s string) DomainStrategy {
 	default:
 		return DomainStrategy_USE_IP
 	}
+}
+
+func dialSerial(ctx context.Context, src net.Address, ips []net.IP, dest net.Destination, sockopt *SocketConfig) (net.Conn, error) {
+	var firstErr error
+	for _, ip := range ips {
+		dest.Address = net.IPAddress(ip)
+		errors.LogInfo(ctx, "replace destination with "+dest.String())
+		conn, err := effectiveSystemDialer.Dial(ctx, src, dest, sockopt)
+		if err == nil {
+			return conn, nil
+		}
+		errors.LogInfoInner(ctx, err, "failed to dial "+dest.String())
+		if firstErr == nil {
+			firstErr = err
+		}
+		if ctx.Err() != nil {
+			break
+		}
+	}
+	return nil, firstErr
 }
