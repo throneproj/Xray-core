@@ -276,7 +276,8 @@ func DialSystem(ctx context.Context, dest net.Destination, sockopt *SocketConfig
 	)
 	if wiring != nil {
 		throneResolver, throneStrategy = wiring.dnsResolution()
-		bindIface, bindMark, bindActive = wiring.bindState()
+		// A pinned sockopt.interface comes back as bindIface, so the fold-in below keeps it.
+		bindIface, bindMark, bindActive = wiring.bindState(sockopt)
 	}
 
 	// With no default interface, a non-loopback dial would leak onto the default route - under TUN, back into the tun.
