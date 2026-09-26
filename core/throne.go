@@ -38,7 +38,8 @@ func init() {
 }
 
 // SetEgress binds this instance's outbound egress sockets to the named physical
-// interface and stamps them with the given fwmark. Call it after New (before or
+// interface (except those whose sockopt.interface pins their own) and stamps them
+// with the given fwmark. Call it after New (before or
 // after Start) and again whenever the default route moves — new dials pick up the
 // change. Passing "" for name reports that no default interface is available,
 // which makes non-loopback dials fail rather than leak onto the default route (the
