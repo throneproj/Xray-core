@@ -97,8 +97,9 @@ func NewHandler(ctx context.Context, config *core.OutboundHandlerConfig) (outbou
 			}
 			h.streamSettings = mss
 			// Register this outbound's stream settings with Throne's egress wiring
-			// so its egress socket binds to the current physical interface (applied
-			// now, and updated at runtime as the default route moves). The bind then
+			// so its egress socket binds to the current physical interface, or to the
+			// one its sockopt.interface pins (applied now, and updated at runtime as
+			// the default route moves). The bind then
 			// rides on the SocketConfig and is honored by Xray's native, per-OS
 			// socket-option apply on every dial path. No-op for instances without
 			// wiring (validation / latency-test instances).

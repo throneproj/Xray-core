@@ -48,6 +48,9 @@ import (
 // cannot see sockets built outside DialSystem, and RegisterOutbound cannot see
 // SocketConfigs built outside an outbound handler.
 //
+// An interface the config names itself (sockopt.interface) is a pin: both layers
+// keep it and add only the mark (see isPin).
+//
 // The wiring is changeable at runtime (SetEgress): when the default route moves to
 // another NIC, new dials pick up the change; existing connections are not
 // migrated, matching sing-box's auto_detect_interface.
@@ -60,43 +63,81 @@ type ThroneWiring struct {
 	iface        string
 	mark         uint32
 	bindActive   bool
-	boundStreams []*MemoryStreamConfig
+	boundStreams []boundStream
+	ifacePinned  map[string]bool // every interface met: true once a config pins it, false while only SetEgress injected it
 	dnsResolver  dns.Client
 	dnsStrategy  DomainStrategy
 }
 
+// boundStream is a registered stream; pin is the interface its own config names.
+type boundStream struct {
+	mss *MemoryStreamConfig
+	pin string
+}
+
+func (b boundStream) bind(iface string, mark uint32) {
+	if b.pin != "" {
+		iface = b.pin
+	}
+	bindStreamEgress(b.mss, iface, mark)
+}
+
 // RegisterOutbound records an outbound handler's stream settings so its egress
-// socket takes the wiring's interface and mark. Called once per outbound when the
-// handler is built. If egress is already set it is applied immediately; otherwise
-// it is applied on the next SetEgress.
+// socket takes the wiring's mark, and its interface unless the config pins one.
+// Called once per outbound when the handler is built. If egress is already set it
+// is applied immediately; otherwise it is applied on the next SetEgress.
 func (w *ThroneWiring) RegisterOutbound(mss *MemoryStreamConfig) {
 	if mss == nil {
 		return
 	}
 	w.mu.Lock()
-	w.boundStreams = append(w.boundStreams, mss)
+	b := boundStream{mss: mss}
+	if sc := mss.SocketSettings; sc != nil && w.isPin(sc.Interface) {
+		b.pin = sc.Interface
+		w.noteIface(b.pin, true)
+	}
+	w.boundStreams = append(w.boundStreams, b)
 	if w.bindActive {
-		bindStreamEgress(mss, w.iface, w.mark)
+		b.bind(w.iface, w.mark)
 	}
 	w.mu.Unlock()
 }
 
-// SetEgress sets the interface every registered outbound binds its egress to and
-// the fwmark that egress carries, and marks binding active. Passing "" for name
-// reports that no default interface is currently available: outbounds are left
-// unbound and DialSystem refuses non-loopback dials (see bindState) instead of
-// leaking egress onto the default route — which, under TUN, is the tun itself.
-// Passing 0 for mark leaves each outbound's own sockopt.mark alone. Safe to call
-// at runtime as the default route changes.
+// SetEgress sets the interface every unpinned registered outbound binds its egress
+// to and the fwmark all of them carry, and marks binding active. Passing "" for
+// name reports that no default interface is currently available: unpinned
+// outbounds are left unbound and DialSystem refuses their non-loopback dials (see
+// bindState) instead of leaking egress onto the default route — which, under TUN,
+// is the tun itself. Passing 0 for mark leaves each outbound's own sockopt.mark
+// alone. Safe to call at runtime as the default route changes.
 func (w *ThroneWiring) SetEgress(name string, mark uint32) {
 	w.mu.Lock()
 	w.iface = name
 	w.mark = mark
 	w.bindActive = true
-	for _, mss := range w.boundStreams {
-		bindStreamEgress(mss, name, mark)
+	if name != "" {
+		w.noteIface(name, false)
+	}
+	for _, b := range w.boundStreams {
+		b.bind(name, mark)
 	}
 	w.mu.Unlock()
+}
+
+// isPin reports whether name was chosen by a config rather than injected by
+// SetEgress, so a stale injected name (gRPC and Hysteria clients capture their
+// SocketConfig once) still follows a rebind. Callers hold w.mu.
+func (w *ThroneWiring) isPin(name string) bool {
+	pinned, seen := w.ifacePinned[name]
+	return name != "" && (pinned || !seen)
+}
+
+// noteIface is called with w.mu held for writing.
+func (w *ThroneWiring) noteIface(name string, pinned bool) {
+	if w.ifacePinned == nil {
+		w.ifacePinned = make(map[string]bool)
+	}
+	w.ifacePinned[name] = w.ifacePinned[name] || pinned
 }
 
 // bindStreamEgress points mss.SocketSettings at a copy that carries iface and
@@ -154,14 +195,18 @@ func (w *ThroneWiring) Clear() {
 	w.mu.Unlock()
 }
 
-// bindState reports the current egress interface and mark, and whether binding is
-// active, for the DialSystem no-interface guard and its bind fallback. active is
-// true once SetEgress has been called; a "" name then means "no default interface
-// right now".
-func (w *ThroneWiring) bindState() (iface string, mark uint32, active bool) {
+// bindState reports the interface a dial on sc binds to (sc's own when it pins one,
+// else the current egress interface), the mark, and whether binding is active, for
+// the DialSystem no-interface guard and its bind fallback. active is true once
+// SetEgress has been called; a "" name then means "no default interface right now".
+func (w *ThroneWiring) bindState(sc *SocketConfig) (iface string, mark uint32, active bool) {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
-	return w.iface, w.mark, w.bindActive
+	iface = w.iface
+	if sc != nil && w.isPin(sc.Interface) {
+		iface = sc.Interface
+	}
+	return iface, w.mark, w.bindActive
 }
 
 // dnsResolution returns the configured outbound resolver and strategy.
