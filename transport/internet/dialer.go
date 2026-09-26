@@ -313,11 +313,13 @@ func DialSystem(ctx context.Context, dest net.Destination, sockopt *SocketConfig
 	// passed through to the system dialer unchanged (default behavior).
 	resolveStrategy := DomainStrategy_AS_IS
 	resolveClient := instanceDNS
+	throneResolved := false
 	if sockopt != nil && sockopt.DomainStrategy.HasStrategy() {
 		resolveStrategy = sockopt.DomainStrategy
 	} else if throneResolver != nil {
 		resolveStrategy = throneStrategy
 		resolveClient = throneResolver
+		throneResolved = true
 	}
 
 	if resolveStrategy.HasStrategy() && dest.Address.Family().IsDomain() {
@@ -332,7 +334,15 @@ func DialSystem(ctx context.Context, dest net.Destination, sockopt *SocketConfig
 				return nil, err
 			}
 		} else if sockopt == nil || sockopt.HappyEyeballs == nil || sockopt.HappyEyeballs.TryDelayMs == 0 || sockopt.HappyEyeballs.MaxConcurrentTry == 0 || len(ips) < 2 || len(sockopt.DialerProxy) > 0 || dest.Network != net.Network_TCP {
-			dest.Address = net.IPAddress(ips[dice.Roll(len(ips))])
+			// throne-dns answers in sing-box's cached order, so keeping that order holds one endpoint until the TTL expires.
+			if throneResolved && (sockopt == nil || len(sockopt.DialerProxy) == 0) {
+				return dialSerial(ctx, src, ips, dest, sockopt)
+			}
+			pick := 0
+			if !throneResolved {
+				pick = dice.Roll(len(ips))
+			}
+			dest.Address = net.IPAddress(ips[pick])
 			errors.LogInfo(ctx, "replace destination with "+dest.String())
 		} else {
 			return TcpRaceDial(ctx, src, ips, dest.Port, sockopt, dest.Address.String())
