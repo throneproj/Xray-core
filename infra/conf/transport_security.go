@@ -359,7 +359,7 @@ func (c *TLSConfig) Build() (proto.Message, error) {
 	config.MasterKeyLog = c.MasterKeyLog
 
 	if c.AllowInsecure {
-		return nil, errors.PrintRemovedFeatureError(`"allowInsecure"`, `"pinnedPeerCertSha256"(pcs) and "verifyPeerCertByName"(vcn)`)
+		config.AllowInsecure = true
 	}
 	if c.PinnedPeerCertSha256 != "" {
 		for v := range strings.SplitSeq(c.PinnedPeerCertSha256, ",") {
