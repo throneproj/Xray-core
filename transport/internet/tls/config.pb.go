@@ -177,7 +177,7 @@ func (x *Certificate) GetBuildChain() bool {
 }
 
 type Config struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
 	AllowInsecure bool                   `protobuf:"varint,1,opt,name=allow_insecure,json=allowInsecure,proto3" json:"allow_insecure,omitempty"`
 	// List of certificates to be served on server.
 	Certificate []*Certificate `protobuf:"bytes,2,rep,name=certificate,proto3" json:"certificate,omitempty"`
@@ -370,37 +370,45 @@ func (x *Config) GetPinnedPeerCertSha256() [][]byte {
 var File_transport_internet_tls_config_proto protoreflect.FileDescriptor
 
 const file_transport_internet_tls_config_proto_rawDesc = "" +
-	"\n#transport/internet/tls/config.proto\x12\x1bxray.tran" +
-	"sport.internet.tls\x1a\x1ftransport/internet/config.pr" +
-	"oto\"\x83\x03\n\x0bCertificate\x12 \n\x0bcertificate\x18\x01 \x01(\x0cR\x0bcertif" +
-	"icate\x12\x10\n\x03key\x18\x02 \x01(\x0cR\x03key\x12D\n\x05usage\x18\x03 \x01(\x0e2..xray.tr" +
-	"ansport.internet.tls.Certificate.UsageR\x05usage\x12#\n" +
-	"\x0docsp_stapling\x18\x04 \x01(\x04R\x0cocspStapling\x12)\n\x10certificat" +
-	"e_path\x18\x05 \x01(\tR\x0fcertificatePath\x12\x19\n\x08key_path\x18\x06 \x01(\tR" +
-	"\x07keyPath\x12(\n\x10One_time_loading\x18\x07 \x01(\x08R\x0eOneTimeLoadi" +
-	"ng\x12\x1f\n\x0bbuild_chain\x18\x08 \x01(\x08R\nbuildChain\"D\n\x05Usage\x12\x10\n\x0c" +
-	"ENCIPHERMENT\x10\x00\x12\x14\n\x10AUTHORITY_VERIFY\x10\x01\x12\x13\n\x0fAUTHORIT" +
-	"Y_ISSUE\x10\x02\"\xcd\x06\n\x06Config\x12%\n\x0eallow_insecure\x18\x01 \x01(\x08R\x0dal" +
-	"lowInsecure\x12J\n\x0bcertificate\x18\x02 \x03(\x0b2(.xray.transpor" +
-	"t.internet.tls.CertificateR\x0bcertificate\x12\x1f\n\x0bserve" +
-	"r_name\x18\x03 \x01(\tR\nserverName\x12#\n\x0dnext_protocol\x18\x04 \x03(\tR" +
-	"\x0cnextProtocol\x12:\n\x19enable_session_resumption\x18\x05 \x01(\x08" +
-	"R\x17enableSessionResumption\x12.\n\x13disable_system_root" +
-	"\x18\x06 \x01(\x08R\x11disableSystemRoot\x12\x1f\n\x0bmin_version\x18\x07 \x01(\tR\n" +
-	"minVersion\x12\x1f\n\x0bmax_version\x18\x08 \x01(\tR\nmaxVersion\x12#\n\x0dc" +
-	"ipher_suites\x18\t \x01(\tR\x0ccipherSuites\x12 \n\x0bfingerprint\x18" +
-	"\x0b \x01(\tR\x0bfingerprint\x12,\n\x12reject_unknown_sni\x18\x0c \x01(\x08R\x10" +
-	"rejectUnknownSni\x12$\n\x0emaster_key_log\x18\x0f \x01(\tR\x0cmaster" +
-	"KeyLog\x12+\n\x11curve_preferences\x18\x10 \x03(\tR\x10curvePreferen" +
-	"ces\x126\n\x18verify_peer_cert_by_name\x18\x11 \x03(\tR\x14verifyPee" +
-	"rCertByName\x12&\n\x0fech_server_keys\x18\x12 \x01(\x0cR\x0dechServerK" +
-	"eys\x12&\n\x0fech_config_list\x18\x13 \x01(\tR\x0dechConfigList\x12U\n\x13e" +
-	"ch_socket_settings\x18\x15 \x01(\x0b2%.xray.transport.intern" +
-	"et.SocketConfigR\x11echSocketSettings\x125\n\x17pinned_pee" +
-	"r_cert_sha256\x18\x16 \x03(\x0cR\x14pinnedPeerCertSha256Bs\n\x1fcom" +
-	".xray.transport.internet.tlsP\x01Z0github.com/xtls/" +
-	"xray-core/transport/internet/tls\xaa\x02\x1bXray.Transpor" +
-	"t.Internet.Tlsb\x06proto3"
+	"\n" +
+	"#transport/internet/tls/config.proto\x12\x1bxray.transport.internet.tls\x1a\x1ftransport/internet/config.proto\"\x83\x03\n" +
+	"\vCertificate\x12 \n" +
+	"\vcertificate\x18\x01 \x01(\fR\vcertificate\x12\x10\n" +
+	"\x03key\x18\x02 \x01(\fR\x03key\x12D\n" +
+	"\x05usage\x18\x03 \x01(\x0e2..xray.transport.internet.tls.Certificate.UsageR\x05usage\x12#\n" +
+	"\rocsp_stapling\x18\x04 \x01(\x04R\focspStapling\x12)\n" +
+	"\x10certificate_path\x18\x05 \x01(\tR\x0fcertificatePath\x12\x19\n" +
+	"\bkey_path\x18\x06 \x01(\tR\akeyPath\x12(\n" +
+	"\x10One_time_loading\x18\a \x01(\bR\x0eOneTimeLoading\x12\x1f\n" +
+	"\vbuild_chain\x18\b \x01(\bR\n" +
+	"buildChain\"D\n" +
+	"\x05Usage\x12\x10\n" +
+	"\fENCIPHERMENT\x10\x00\x12\x14\n" +
+	"\x10AUTHORITY_VERIFY\x10\x01\x12\x13\n" +
+	"\x0fAUTHORITY_ISSUE\x10\x02\"\xcd\x06\n" +
+	"\x06Config\x12%\n" +
+	"\x0eallow_insecure\x18\x01 \x01(\bR\rallowInsecure\x12J\n" +
+	"\vcertificate\x18\x02 \x03(\v2(.xray.transport.internet.tls.CertificateR\vcertificate\x12\x1f\n" +
+	"\vserver_name\x18\x03 \x01(\tR\n" +
+	"serverName\x12#\n" +
+	"\rnext_protocol\x18\x04 \x03(\tR\fnextProtocol\x12:\n" +
+	"\x19enable_session_resumption\x18\x05 \x01(\bR\x17enableSessionResumption\x12.\n" +
+	"\x13disable_system_root\x18\x06 \x01(\bR\x11disableSystemRoot\x12\x1f\n" +
+	"\vmin_version\x18\a \x01(\tR\n" +
+	"minVersion\x12\x1f\n" +
+	"\vmax_version\x18\b \x01(\tR\n" +
+	"maxVersion\x12#\n" +
+	"\rcipher_suites\x18\t \x01(\tR\fcipherSuites\x12 \n" +
+	"\vfingerprint\x18\v \x01(\tR\vfingerprint\x12,\n" +
+	"\x12reject_unknown_sni\x18\f \x01(\bR\x10rejectUnknownSni\x12$\n" +
+	"\x0emaster_key_log\x18\x0f \x01(\tR\fmasterKeyLog\x12+\n" +
+	"\x11curve_preferences\x18\x10 \x03(\tR\x10curvePreferences\x126\n" +
+	"\x18verify_peer_cert_by_name\x18\x11 \x03(\tR\x14verifyPeerCertByName\x12&\n" +
+	"\x0fech_server_keys\x18\x12 \x01(\fR\rechServerKeys\x12&\n" +
+	"\x0fech_config_list\x18\x13 \x01(\tR\rechConfigList\x12U\n" +
+	"\x13ech_socket_settings\x18\x15 \x01(\v2%.xray.transport.internet.SocketConfigR\x11echSocketSettings\x125\n" +
+	"\x17pinned_peer_cert_sha256\x18\x16 \x03(\fR\x14pinnedPeerCertSha256Bs\n" +
+	"\x1fcom.xray.transport.internet.tlsP\x01Z0github.com/xtls/xray-core/transport/internet/tls\xaa\x02\x1bXray.Transport.Internet.Tlsb\x06proto3"
 
 var (
 	file_transport_internet_tls_config_proto_rawDescOnce sync.Once

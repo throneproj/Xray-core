@@ -28,8 +28,7 @@ const (
 	SecurityType_AUTO              SecurityType = 2
 	SecurityType_AES128_GCM        SecurityType = 3
 	SecurityType_CHACHA20_POLY1305 SecurityType = 4
-	// AIROUTER: возвращены, удалены апстримом в d7fa207.
-	SecurityType_NONE              SecurityType = 5
+	SecurityType_NONE              SecurityType = 5 // [DEPRECATED 2023-06]
 	SecurityType_ZERO              SecurityType = 6
 )
 
@@ -127,13 +126,19 @@ func (x *SecurityConfig) GetType() SecurityType {
 var File_common_protocol_headers_proto protoreflect.FileDescriptor
 
 const file_common_protocol_headers_proto_rawDesc = "" +
-	"\n\x1dcommon/protocol/headers.proto\x12\x14xray.common.pro" +
-	"tocol\"H\n\x0eSecurityConfig\x126\n\x04type\x18\x01 \x01(\x0e2\".xray.com" +
-	"mon.protocol.SecurityTypeR\x04type*`\n\x0cSecurityType\x12" +
-	"\x0b\n\x07UNKNOWN\x10\x00\x12\x08\n\x04AUTO\x10\x02\x12\x0e\n\nAES128_GCM\x10\x03\x12\x15\n\x11CHACHA" +
-	"20_POLY1305\x10\x04\x12\x08\n\x04NONE\x10\x05\x12\x08\n\x04ZERO\x10\x06B^\n\x18com.xray.co" +
-	"mmon.protocolP\x01Z)github.com/xtls/xray-core/commo" +
-	"n/protocol\xaa\x02\x14Xray.Common.Protocolb\x06proto3"
+	"\n" +
+	"\x1dcommon/protocol/headers.proto\x12\x14xray.common.protocol\"H\n" +
+	"\x0eSecurityConfig\x126\n" +
+	"\x04type\x18\x01 \x01(\x0e2\".xray.common.protocol.SecurityTypeR\x04type*`\n" +
+	"\fSecurityType\x12\v\n" +
+	"\aUNKNOWN\x10\x00\x12\b\n" +
+	"\x04AUTO\x10\x02\x12\x0e\n" +
+	"\n" +
+	"AES128_GCM\x10\x03\x12\x15\n" +
+	"\x11CHACHA20_POLY1305\x10\x04\x12\b\n" +
+	"\x04NONE\x10\x05\x12\b\n" +
+	"\x04ZERO\x10\x06B^\n" +
+	"\x18com.xray.common.protocolP\x01Z)github.com/xtls/xray-core/common/protocol\xaa\x02\x14Xray.Common.Protocolb\x06proto3"
 
 var (
 	file_common_protocol_headers_proto_rawDescOnce sync.Once
