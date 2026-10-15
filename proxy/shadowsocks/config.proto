@@ -19,8 +19,6 @@ message Account {
 
 enum CipherType {
   UNKNOWN = 0;
-  // AIROUTER: возвращены. Апстрим удалил в 00bcd40c (2021), из-за чего ссылки
-  // ss с этими методами перестали разбираться. Номера те же.
   AES_128_CFB = 1;
   AES_256_CFB = 2;
   CHACHA20 = 3;
@@ -29,8 +27,6 @@ enum CipherType {
   AES_256_GCM = 6;
   CHACHA20_POLY1305 = 7;
   XCHACHA20_POLY1305 = 8;
-  // AIROUTER: возвращён. Апстрим удалил в d7fa207, из-за чего ссылки ss с
-  // method=none/plain перестали разбираться. Номер тот же.
   NONE = 9;
 }
 

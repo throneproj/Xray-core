@@ -16,7 +16,6 @@ import (
 
 func cipherFromString(c string) shadowsocks.CipherType {
 	switch strings.ToLower(c) {
-	// AIROUTER: возвращены, удалены апстримом в 00bcd40c (2021).
 	case "aes-256-cfb":
 		return shadowsocks.CipherType_AES_256_CFB
 	case "aes-128-cfb":

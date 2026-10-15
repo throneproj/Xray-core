@@ -262,12 +262,12 @@ func (s *ServerSession) DecodeRequestBody(request *protocol.RequestHeader, reade
 	}
 
 	switch request.Security {
-	// AIROUTER: возвращён, удалён апстримом в d7fa207.
 	case protocol.SecurityType_NONE:
 		if request.Option.Has(protocol.RequestOptionChunkStream) {
 			if request.Command.TransferType() == protocol.TransferTypeStream {
 				return crypto.NewChunkStreamReader(sizeParser, reader), nil
 			}
+
 			auth := &crypto.AEADAuthenticator{
 				AEAD:                    new(NoOpAuthenticator),
 				NonceGenerator:          crypto.GenerateEmptyBytes(),
@@ -384,7 +384,6 @@ func (s *ServerSession) EncodeResponseBody(request *protocol.RequestHeader, writ
 	}
 
 	switch request.Security {
-	// AIROUTER: возвращён, удалён апстримом в d7fa207.
 	case protocol.SecurityType_NONE:
 		if request.Option.Has(protocol.RequestOptionChunkStream) {
 			if request.Command.TransferType() == protocol.TransferTypeStream {

@@ -114,7 +114,6 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
 		request.Option.Set(protocol.RequestOptionGlobalPadding)
 	}
 
-	// AIROUTER: возвращено, удалено апстримом в d7fa207.
 	if request.Security == protocol.SecurityType_ZERO {
 		request.Security = protocol.SecurityType_NONE
 		request.Option.Clear(protocol.RequestOptionChunkStream)

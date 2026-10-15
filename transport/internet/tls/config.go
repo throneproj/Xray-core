@@ -384,8 +384,6 @@ func (c *Config) GetTLSConfig(opts ...Option) *tls.Config {
 		PinnedPeerCertSha256: c.PinnedPeerCertSha256,
 	}
 	config := &tls.Config{
-		// AIROUTER: возвращено вместе с полем allow_insecure (см. config.proto).
-		// Было удалено в 55956f8 вместе с таймбомбой на 2026-06-01.
 		InsecureSkipVerify:     c.AllowInsecure,
 		Rand:                   randCarrier,
 		ClientSessionCache:     globalSessionCache,

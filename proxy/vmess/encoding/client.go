@@ -116,7 +116,6 @@ func (c *ClientSession) EncodeRequestBody(request *protocol.RequestHeader, write
 	}
 
 	switch request.Security {
-	// AIROUTER: возвращён, удалён апстримом в d7fa207.
 	case protocol.SecurityType_NONE:
 		if request.Option.Has(protocol.RequestOptionChunkStream) {
 			if request.Command.TransferType() == protocol.TransferTypeStream {
@@ -268,7 +267,6 @@ func (c *ClientSession) DecodeResponseBody(request *protocol.RequestHeader, read
 	}
 
 	switch request.Security {
-	// AIROUTER: возвращён, удалён апстримом в d7fa207.
 	case protocol.SecurityType_NONE:
 		if request.Option.Has(protocol.RequestOptionChunkStream) {
 			if request.Command.TransferType() == protocol.TransferTypeStream {

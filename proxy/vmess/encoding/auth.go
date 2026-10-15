@@ -17,9 +17,7 @@ func Authenticate(b []byte) uint32 {
 	return fnv1hash.Sum32()
 }
 
-// AIROUTER: возвращён, удалён апстримом в d7fa207. Нужен веткам
-// SecurityType_NONE в client.go и server.go: ноды vmess с security=none
-// из подписок иначе нечем кодировать.
+// [DEPRECATED 2023-06]
 type NoOpAuthenticator struct{}
 
 func (NoOpAuthenticator) NonceSize() int {

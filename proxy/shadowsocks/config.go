@@ -61,7 +61,6 @@ func createXChaCha20Poly1305(key []byte) cipher.AEAD {
 
 func (a *Account) getCipher() (Cipher, error) {
 	switch a.CipherType {
-	// AIROUTER: возвращены, удалены апстримом в 00bcd40c (2021).
 	case CipherType_AES_128_CFB:
 		return &AesCfb{KeyBytes: 16}, nil
 	case CipherType_AES_256_CFB:
@@ -94,38 +93,11 @@ func (a *Account) getCipher() (Cipher, error) {
 			IVBytes:         32,
 			AEADAuthCreator: createXChaCha20Poly1305,
 		}, nil
-	// AIROUTER: возвращён, удалён апстримом в d7fa207.
 	case CipherType_NONE:
 		return NoneCipher{}, nil
 	default:
 		return nil, errors.New("Unsupported cipher.")
 	}
-}
-
-// AIROUTER: возвращён, удалён апстримом в d7fa207. Нужен нодам из подписок
-// с method=none/plain.
-type NoneCipher struct{}
-
-func (NoneCipher) KeySize() int32 { return 0 }
-func (NoneCipher) IVSize() int32  { return 0 }
-func (NoneCipher) IsAEAD() bool {
-	return false
-}
-
-func (NoneCipher) NewDecryptionReader(key []byte, iv []byte, reader io.Reader) (buf.Reader, error) {
-	return buf.NewReader(reader), nil
-}
-
-func (NoneCipher) NewEncryptionWriter(key []byte, iv []byte, writer io.Writer) (buf.Writer, error) {
-	return buf.NewWriter(writer), nil
-}
-
-func (NoneCipher) EncodePacket(key []byte, b *buf.Buffer) error {
-	return nil
-}
-
-func (NoneCipher) DecodePacket(key []byte, b *buf.Buffer) error {
-	return nil
 }
 
 // AsAccount implements protocol.AsAccount.
@@ -152,9 +124,6 @@ type Cipher interface {
 	EncodePacket(key []byte, b *buf.Buffer) error
 	DecodePacket(key []byte, b *buf.Buffer) error
 }
-
-// AIROUTER: возвращены, удалены апстримом в 00bcd40c (2021). Нужны нодам
-// из подписок с method=aes-*-cfb/chacha20.
 
 // AesCfb represents all AES-CFB ciphers.
 type AesCfb struct {
@@ -313,6 +282,30 @@ func (c *AEADCipher) DecodePacket(key []byte, b *buf.Buffer) error {
 		return err
 	}
 	b.Resize(ivLen, int32(len(bbb)))
+	return nil
+}
+
+type NoneCipher struct{}
+
+func (NoneCipher) KeySize() int32 { return 0 }
+func (NoneCipher) IVSize() int32  { return 0 }
+func (NoneCipher) IsAEAD() bool {
+	return false
+}
+
+func (NoneCipher) NewDecryptionReader(key []byte, iv []byte, reader io.Reader) (buf.Reader, error) {
+	return buf.NewReader(reader), nil
+}
+
+func (NoneCipher) NewEncryptionWriter(key []byte, iv []byte, writer io.Writer) (buf.Writer, error) {
+	return buf.NewWriter(writer), nil
+}
+
+func (NoneCipher) EncodePacket(key []byte, b *buf.Buffer) error {
+	return nil
+}
+
+func (NoneCipher) DecodePacket(key []byte, b *buf.Buffer) error {
 	return nil
 }
 

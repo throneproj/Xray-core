@@ -222,9 +222,6 @@ type OutboundDetourConfig struct {
 	TargetStrategy string           `json:"targetStrategy"`
 }
 
-// AIROUTER: requiresTransportSecurity и validateOutboundTransportSecurity
-// удалены. См. комментарий на месте вызова в OutboundDetourConfig.Build.
-
 // Build implements Buildable.
 func (c *OutboundDetourConfig) Build() (*core.OutboundHandlerConfig, error) {
 	if c.ProxySettings != nil {
@@ -303,12 +300,6 @@ func (c *OutboundDetourConfig) Build() (*core.OutboundHandlerConfig, error) {
 	if err != nil {
 		return nil, errors.New("failed to build outbound handler for protocol ", c.Protocol).Base(err)
 	}
-
-	// AIROUTER: проверка validateOutboundTransportSecurity удалена вместе с
-	// requiresTransportSecurity (см. ниже). Апстрим запретил нешифрованные
-	// исходящие на публичные адреса в d7fa207, из-за чего одна такая нода
-	// роняла загрузку всего конфига. Ноды из подписок бывают без шифрования,
-	// и это их дело, а не загрузчика конфига.
 
 	if fc, ok := ts.(*freedom.Config); ok {
 		if senderSettings.StreamSettings != nil &&
