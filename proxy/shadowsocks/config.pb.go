@@ -27,27 +27,42 @@ type CipherType int32
 
 const (
 	CipherType_UNKNOWN            CipherType = 0
+	CipherType_AES_128_CFB        CipherType = 1
+	CipherType_AES_256_CFB        CipherType = 2
+	CipherType_CHACHA20           CipherType = 3
+	CipherType_CHACHA20_IETF      CipherType = 4
 	CipherType_AES_128_GCM        CipherType = 5
 	CipherType_AES_256_GCM        CipherType = 6
 	CipherType_CHACHA20_POLY1305  CipherType = 7
 	CipherType_XCHACHA20_POLY1305 CipherType = 8
+	CipherType_NONE               CipherType = 9
 )
 
 // Enum value maps for CipherType.
 var (
 	CipherType_name = map[int32]string{
 		0: "UNKNOWN",
+		1: "AES_128_CFB",
+		2: "AES_256_CFB",
+		3: "CHACHA20",
+		4: "CHACHA20_IETF",
 		5: "AES_128_GCM",
 		6: "AES_256_GCM",
 		7: "CHACHA20_POLY1305",
 		8: "XCHACHA20_POLY1305",
+		9: "NONE",
 	}
 	CipherType_value = map[string]int32{
 		"UNKNOWN":            0,
+		"AES_128_CFB":        1,
+		"AES_256_CFB":        2,
+		"CHACHA20":           3,
+		"CHACHA20_IETF":      4,
 		"AES_128_GCM":        5,
 		"AES_256_GCM":        6,
 		"CHACHA20_POLY1305":  7,
 		"XCHACHA20_POLY1305": 8,
+		"NONE":               9,
 	}
 )
 
@@ -248,14 +263,19 @@ const file_proxy_shadowsocks_config_proto_rawDesc = "" +
 	"\x05users\x18\x01 \x03(\v2\x1a.xray.common.protocol.UserR\x05users\x122\n" +
 	"\anetwork\x18\x02 \x03(\x0e2\x18.xray.common.net.NetworkR\anetwork\"L\n" +
 	"\fClientConfig\x12<\n" +
-	"\x06server\x18\x01 \x01(\v2$.xray.common.protocol.ServerEndpointR\x06server*j\n" +
+	"\x06server\x18\x01 \x01(\v2$.xray.common.protocol.ServerEndpointR\x06server*\xb7\x01\n" +
 	"\n" +
 	"CipherType\x12\v\n" +
 	"\aUNKNOWN\x10\x00\x12\x0f\n" +
+	"\vAES_128_CFB\x10\x01\x12\x0f\n" +
+	"\vAES_256_CFB\x10\x02\x12\f\n" +
+	"\bCHACHA20\x10\x03\x12\x11\n" +
+	"\rCHACHA20_IETF\x10\x04\x12\x0f\n" +
 	"\vAES_128_GCM\x10\x05\x12\x0f\n" +
 	"\vAES_256_GCM\x10\x06\x12\x15\n" +
 	"\x11CHACHA20_POLY1305\x10\a\x12\x16\n" +
-	"\x12XCHACHA20_POLY1305\x10\bBd\n" +
+	"\x12XCHACHA20_POLY1305\x10\b\x12\b\n" +
+	"\x04NONE\x10\tBd\n" +
 	"\x1acom.xray.proxy.shadowsocksP\x01Z+github.com/xtls/xray-core/proxy/shadowsocks\xaa\x02\x16Xray.Proxy.Shadowsocksb\x06proto3"
 
 var (
