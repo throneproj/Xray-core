@@ -114,14 +114,20 @@ func Dial(ctx context.Context, dest net.Destination, streamSettings *internet.Me
 		return nil, errors.New("failed to announce session ", session).Base(err)
 	}
 
+	// the session outlives ctx, but its storage requests must still dial under the Throne egress wiring
+	connCtx := context.Background()
+	if w := internet.ThroneWiringFromContext(ctx); w != nil {
+		connCtx = internet.ContextWithThroneWiring(connCtx, w)
+	}
+
 	if ok {
 		errors.LogInfo(ctx, "opened session ", session, " in ", len(r.Up.Slots), " slots")
-		return newSlotConn(context.Background(), slots, r.Up, r.Down, p, func() {
+		return newSlotConn(connCtx, slots, r.Up, r.Down, p, func() {
 			storage.Close()
 		}), nil
 	}
 	errors.LogInfo(ctx, "opened session ", session)
-	return newConn(context.Background(), storage,
+	return newConn(connCtx, storage,
 		uplinkPrefix(session), downlinkPrefix(session), p, func() {
 			storage.Close()
 		}), nil
