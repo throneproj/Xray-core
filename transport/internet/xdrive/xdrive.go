@@ -102,7 +102,12 @@ func Dial(ctx context.Context, dest net.Destination, streamSettings *internet.Me
 
 	errors.LogInfo(ctx, "opened session ", session)
 
-	return newConn(context.Background(), storage,
+	// the session outlives ctx, but its storage requests must still dial under the Throne egress wiring
+	connCtx := context.Background()
+	if w := internet.ThroneWiringFromContext(ctx); w != nil {
+		connCtx = internet.ContextWithThroneWiring(connCtx, w)
+	}
+	return newConn(connCtx, storage,
 		uplinkPrefix(session), downlinkPrefix(session), paramsFromConfig(config), func() {
 			storage.Close()
 		}), nil
