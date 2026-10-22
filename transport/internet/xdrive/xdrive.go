@@ -85,6 +85,8 @@ func streamConfig(streamSettings *internet.MemoryStreamConfig) (*Config, error) 
 }
 
 type spareRing struct {
+	// ctx carries the Throne egress wiring for the spare's own storage requests
+	ctx     context.Context
 	storage Storage
 	session string
 	ring    ring
@@ -109,7 +111,11 @@ func spareBoxFor(config *Config) *spareBox {
 }
 
 func dropSpare(s spareRing) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx := s.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	s.storage.Delete(ctx, sessionPrefix(s.session))
 	s.storage.Close()
@@ -130,12 +136,12 @@ func takeSpare(config *Config, p params) (spareRing, bool) {
 	}
 }
 
-func warmSpares(streamSettings *internet.MemoryStreamConfig, config *Config, p params) {
+func warmSpares(connCtx context.Context, streamSettings *internet.MemoryStreamConfig, config *Config, p params) {
 	spareBoxFor(config).last.Store(time.Now().UnixNano())
-	fillSpares(streamSettings, config, p)
+	fillSpares(connCtx, streamSettings, config, p)
 }
 
-func fillSpares(streamSettings *internet.MemoryStreamConfig, config *Config, p params) {
+func fillSpares(connCtx context.Context, streamSettings *internet.MemoryStreamConfig, config *Config, p params) {
 	box := spareBoxFor(config)
 	if !box.busy.CompareAndSwap(false, true) {
 		return
@@ -178,15 +184,15 @@ func fillSpares(streamSettings *internet.MemoryStreamConfig, config *Config, p p
 				storage.Close()
 				return
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			ctx, cancel := context.WithTimeout(connCtx, 30*time.Second)
 			r, err := makeRing(ctx, slots, session, p)
 			cancel()
 			if err != nil {
-				dropSpare(spareRing{storage: storage, session: session})
+				dropSpare(spareRing{ctx: connCtx, storage: storage, session: session})
 				return
 			}
 			select {
-			case box.ch <- spareRing{storage: storage, session: session, ring: r, at: time.Now()}:
+			case box.ch <- spareRing{ctx: connCtx, storage: storage, session: session, ring: r, at: time.Now()}:
 			default:
 				storage.Close()
 				return
@@ -194,7 +200,7 @@ func fillSpares(streamSettings *internet.MemoryStreamConfig, config *Config, p p
 		}
 		time.AfterFunc(p.sessionTTL/4, func() {
 			if !box.stop.Load() && time.Since(time.Unix(0, box.last.Load())) < spareIdleStop {
-				fillSpares(streamSettings, config, p)
+				fillSpares(connCtx, streamSettings, config, p)
 			}
 		})
 	}()
@@ -207,6 +213,12 @@ func Dial(ctx context.Context, dest net.Destination, streamSettings *internet.Me
 	}
 
 	p := paramsFromConfig(config)
+
+	// the session outlives ctx, but its storage requests must still dial under the Throne egress wiring
+	connCtx := context.Background()
+	if w := internet.ThroneWiringFromContext(ctx); w != nil {
+		connCtx = internet.ContextWithThroneWiring(connCtx, w)
+	}
 
 	spare, warm := takeSpare(config, p)
 	storage, session, r := spare.storage, spare.session, spare.ring
@@ -235,9 +247,9 @@ func Dial(ctx context.Context, dest net.Destination, streamSettings *internet.Me
 	}
 
 	if ok {
-		warmSpares(streamSettings, config, p)
+		warmSpares(connCtx, streamSettings, config, p)
 		errors.LogInfo(ctx, "opened session ", session, " in ", len(r.Up.Slots), " slots")
-		conn := newSlotConn(context.Background(), slots, r.Up, r.Down, p, nil, func() {
+		conn := newSlotConn(connCtx, slots, r.Up, r.Down, p, nil, func() {
 			storage.Close()
 		})
 		writer := conn.writer.(*slotWriter)
@@ -257,7 +269,7 @@ func Dial(ctx context.Context, dest net.Destination, streamSettings *internet.Me
 				}
 			}
 			// An announce failure surfaces as a connection error on the next Write/Read.
-			if err := storage.Put(context.Background(), announceName(session, time.Now()), announce); err != nil {
+			if err := storage.Put(connCtx, announceName(session, time.Now()), announce); err != nil {
 				err = errors.New("failed to announce session ", session).Base(err)
 				writer.fail(err)
 				conn.reader.(*slotReader).setErr(err)
@@ -271,7 +283,7 @@ func Dial(ctx context.Context, dest net.Destination, streamSettings *internet.Me
 		return nil, errors.New("failed to announce session ", session).Base(err)
 	}
 	errors.LogInfo(ctx, "opened session ", session)
-	return newConn(context.Background(), storage,
+	return newConn(connCtx, storage,
 		uplinkPrefix(session), downlinkPrefix(session), p, func() {
 			storage.Close()
 		}), nil

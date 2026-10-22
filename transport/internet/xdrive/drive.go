@@ -186,7 +186,7 @@ func (s *driveStorage) accessToken(ctx context.Context) (string, error) {
 	if s.token != "" && time.Now().Before(s.tokenExpiry) {
 		if s.tokenLifetime > 0 && time.Until(s.tokenExpiry) < s.tokenLifetime/5 && !s.refreshing && time.Now().After(s.tokenRetryAt) {
 			s.refreshing = true
-			go s.refreshTokenBackground()
+			go s.refreshTokenBackground(context.WithoutCancel(ctx))
 		}
 		token := s.token
 		s.tokenMu.Unlock()
@@ -263,8 +263,8 @@ func (s *driveStorage) storeToken(token string, lifetime time.Duration) {
 	s.tokenExpiry = time.Now().Add(expiry)
 }
 
-func (s *driveStorage) refreshTokenBackground() {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+func (s *driveStorage) refreshTokenBackground(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	token, lifetime, err := s.fetchToken(ctx)
 
