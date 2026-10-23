@@ -72,4 +72,6 @@ message MultiplexingConfig {
   int32 xudpConcurrency = 3;
   // "reject" (default), "allow" or "skip".
   string xudpProxyUDP443 = 4;
+  // Max number of Mux connections, once reached new streams join the least busy one.
+  int32 maxConnections = 5;
 }

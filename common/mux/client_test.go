@@ -35,6 +35,69 @@ func TestIncrementalPickerFailure(t *testing.T) {
 	}
 }
 
+type testWorkerFactory struct {
+	strategy mux.ClientStrategy
+	workers  []*mux.ClientWorker
+}
+
+func (f *testWorkerFactory) Create() (*mux.ClientWorker, error) {
+	_, link := newLinkPair()
+	worker, err := mux.NewClientWorker(*link, f.strategy)
+	if err == nil {
+		f.workers = append(f.workers, worker)
+	}
+	return worker, err
+}
+
+func TestIncrementalPickerMaxWorkers(t *testing.T) {
+	tests := []struct {
+		name       string
+		strategy   mux.ClientStrategy
+		maxWorkers uint32
+		streams    int
+		wantActive []uint32
+	}{
+		{"no limit", mux.ClientStrategy{MaxConcurrency: 1, MaxConnection: 128}, 0, 3, []uint32{1, 1, 1}},
+		{"limit", mux.ClientStrategy{MaxConnection: 128}, 2, 4, []uint32{2, 2}},
+		{"closing not counted", mux.ClientStrategy{MaxConnection: 2}, 2, 4, []uint32{2, 1, 1}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			factory := &testWorkerFactory{strategy: tt.strategy}
+			manager := &mux.ClientManager{
+				Enabled: true,
+				Picker: &mux.IncrementalWorkerPicker{
+					Factory:     factory,
+					MaxWorkers:  tt.maxWorkers,
+					Concurrency: 1,
+				},
+			}
+			defer func() {
+				for _, w := range factory.workers {
+					w.Close()
+				}
+			}()
+
+			ctx := session.ContextWithOutbounds(context.Background(), []*session.Outbound{{
+				Target: net.TCPDestination(net.DomainAddress("www.example.com"), 80),
+			}})
+			for i := 0; i < tt.streams; i++ {
+				link, _ := newLinkPair()
+				common.Must(manager.Dispatch(ctx, link))
+			}
+
+			if len(factory.workers) != len(tt.wantActive) {
+				t.Fatalf("created %d workers, want %d", len(factory.workers), len(tt.wantActive))
+			}
+			for i, w := range factory.workers {
+				if got := w.ActiveConnections(); got != tt.wantActive[i] {
+					t.Errorf("worker %d has %d active streams, want %d", i, got, tt.wantActive[i])
+				}
+			}
+		})
+	}
+}
+
 func TestClientWorkerEOF(t *testing.T) {
 	reader, writer := pipe.New(pipe.WithoutSizeLimit())
 	common.Must(writer.Close())

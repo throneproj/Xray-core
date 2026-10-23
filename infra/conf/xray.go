@@ -112,6 +112,7 @@ type MuxConfig struct {
 	Concurrency     int16  `json:"concurrency"`
 	XudpConcurrency int16  `json:"xudpConcurrency"`
 	XudpProxyUDP443 string `json:"xudpProxyUDP443"`
+	MaxConnections  int16  `json:"maxConnections"`
 }
 
 // Build creates MultiplexingConfig, Concurrency < 0 completely disables mux.
@@ -128,6 +129,7 @@ func (m *MuxConfig) Build() (*proxyman.MultiplexingConfig, error) {
 		Concurrency:     int32(m.Concurrency),
 		XudpConcurrency: int32(m.XudpConcurrency),
 		XudpProxyUDP443: m.XudpProxyUDP443,
+		MaxConnections:  int32(m.MaxConnections),
 	}, nil
 }
 
