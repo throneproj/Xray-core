@@ -255,6 +255,13 @@ func TestMuxConfig_Build(t *testing.T) {
 			XudpConcurrency: 0,
 			XudpProxyUDP443: "reject",
 		}},
+		{"max connections", `{"enabled": true, "concurrency": 8, "maxConnections": 4}`, &proxyman.MultiplexingConfig{
+			Enabled:         true,
+			Concurrency:     8,
+			XudpConcurrency: 0,
+			XudpProxyUDP443: "reject",
+			MaxConnections:  4,
+		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

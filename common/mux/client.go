@@ -46,7 +46,9 @@ type WorkerPicker interface {
 }
 
 type IncrementalWorkerPicker struct {
-	Factory ClientWorkerFactory
+	Factory     ClientWorkerFactory
+	MaxWorkers  uint32 // caps open workers, which then take streams beyond Concurrency
+	Concurrency uint32
 
 	access      sync.Mutex
 	workers     []*ClientWorker
@@ -85,12 +87,33 @@ func (p *IncrementalWorkerPicker) findAvailable() int {
 	return -1
 }
 
+func (p *IncrementalWorkerPicker) findLeastBusy() *ClientWorker {
+	var least *ClientWorker
+	var leastActive, open uint32
+	for _, w := range p.workers {
+		if w.IsFull() {
+			continue
+		}
+		open++
+		if active := w.ActiveConnections(); least == nil || active < leastActive {
+			least, leastActive = w, active
+		}
+	}
+	if least == nil || (open < p.MaxWorkers && leastActive >= p.Concurrency) {
+		return nil
+	}
+	return least
+}
+
 func (p *IncrementalWorkerPicker) pickInternal() (*ClientWorker, bool, error) {
 	p.access.Lock()
 	defer p.access.Unlock()
 
-	idx := p.findAvailable()
-	if idx >= 0 {
+	if p.MaxWorkers > 0 {
+		if worker := p.findLeastBusy(); worker != nil {
+			return worker, false, nil
+		}
+	} else if idx := p.findAvailable(); idx >= 0 {
 		n := len(p.workers)
 		if n > 1 && idx != n-1 {
 			p.workers[n-1], p.workers[idx] = p.workers[idx], p.workers[n-1]
