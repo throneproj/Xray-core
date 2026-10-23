@@ -145,19 +145,7 @@ func NewHandler(ctx context.Context, config *core.OutboundHandlerConfig) (outbou
 				config.Concurrency = 128
 			}
 			if config.Concurrency > 0 {
-				h.mux = &mux.ClientManager{
-					Enabled: true,
-					Picker: &mux.IncrementalWorkerPicker{
-						Factory: &mux.DialingWorkerFactory{
-							Proxy:  proxyHandler,
-							Dialer: h,
-							Strategy: mux.ClientStrategy{
-								MaxConcurrency: uint32(config.Concurrency),
-								MaxConnection:  1024,
-							},
-						},
-					},
-				}
+				h.mux = h.newMuxClient(proxyHandler, config.Concurrency, config.MaxConnections)
 			}
 			if config.XudpConcurrency < 0 {
 				h.xudp = &mux.ClientManager{Enabled: false}
@@ -166,19 +154,7 @@ func NewHandler(ctx context.Context, config *core.OutboundHandlerConfig) (outbou
 				h.xudp = nil // same as before
 			}
 			if config.XudpConcurrency > 0 {
-				h.xudp = &mux.ClientManager{
-					Enabled: true,
-					Picker: &mux.IncrementalWorkerPicker{
-						Factory: &mux.DialingWorkerFactory{
-							Proxy:  proxyHandler,
-							Dialer: h,
-							Strategy: mux.ClientStrategy{
-								MaxConcurrency: uint32(config.XudpConcurrency),
-								MaxConnection:  1024,
-							},
-						},
-					},
-				}
+				h.xudp = h.newMuxClient(proxyHandler, config.XudpConcurrency, config.MaxConnections)
 			}
 			h.udp443 = config.XudpProxyUDP443
 		}
@@ -186,6 +162,28 @@ func NewHandler(ctx context.Context, config *core.OutboundHandlerConfig) (outbou
 
 	h.proxy = proxyHandler
 	return h, nil
+}
+
+func (h *Handler) newMuxClient(p proxy.Outbound, concurrency, maxConnections int32) *mux.ClientManager {
+	factory := &mux.DialingWorkerFactory{
+		Proxy:  p,
+		Dialer: h,
+		Strategy: mux.ClientStrategy{
+			MaxConcurrency: uint32(concurrency),
+			MaxConnection:  1024,
+		},
+	}
+	picker := &mux.IncrementalWorkerPicker{Factory: factory}
+	if maxConnections > 0 {
+		// concurrency becomes the picker's soft threshold for opening another connection
+		factory.Strategy.MaxConcurrency = 0
+		picker.MaxWorkers = uint32(maxConnections)
+		picker.Concurrency = uint32(concurrency)
+	}
+	return &mux.ClientManager{
+		Enabled: true,
+		Picker:  picker,
+	}
 }
 
 // Tag implements outbound.Handler.
