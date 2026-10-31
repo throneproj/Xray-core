@@ -178,12 +178,14 @@ func (c *DefaultDialerClient) PostPacket(ctx context.Context, url string, sessio
 	return nil
 }
 
-// HTTP/1.1 and HTTP/2 will close itself, we only handle HTTP/3 here
 func (c *DefaultDialerClient) Close() error {
 	transport := c.client.Transport
 	if h3Transport, ok := transport.(*http3.Transport); ok {
 		h3Transport.Close()
+		return nil
 	}
+	// HTTP/1.1 and HTTP/2 conns would idle out on their own, a retired client should not wait for that
+	c.client.CloseIdleConnections()
 	return nil
 }
 

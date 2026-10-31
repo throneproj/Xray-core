@@ -23,6 +23,7 @@ import (
 	"github.com/xtls/xray-core/common/net"
 	"github.com/xtls/xray-core/common/net/cnc"
 	"github.com/xtls/xray-core/common/signal/done"
+	"github.com/xtls/xray-core/core"
 	"github.com/xtls/xray-core/transport/internet"
 	"github.com/xtls/xray-core/transport/internet/browser_dialer"
 	"github.com/xtls/xray-core/transport/internet/hysteria/congestion"
@@ -56,6 +57,7 @@ func getHTTPClient(ctx context.Context, dest net.Destination, streamSettings *in
 
 	if globalDialerMap == nil {
 		globalDialerMap = make(map[dialerConf]*XmuxManager)
+		go cleanDialers()
 	}
 
 	key := dialerConf{dest, streamSettings}
@@ -72,11 +74,31 @@ func getHTTPClient(ctx context.Context, dest net.Destination, streamSettings *in
 		xmuxManager = NewXmuxManager(xmuxConfig, func() XmuxConn {
 			return createHTTPClient(dest, streamSettings)
 		})
+		xmuxManager.instance = core.FromContext(ctx)
 		globalDialerMap[key] = xmuxManager
 	}
 
 	xmuxClient := xmuxManager.GetXmuxClient(ctx)
 	return xmuxClient.XmuxConn.(DialerClient), xmuxClient
+}
+
+// Keys hold the outbound's own stream settings, so a closed instance's entries are never looked up again
+func cleanDialers() {
+	ticker := time.NewTicker(time.Second)
+	for range ticker.C {
+		var closed []*XmuxManager
+		globalDialerAccess.Lock()
+		for key, xmuxManager := range globalDialerMap {
+			if xmuxManager.instance != nil && !xmuxManager.instance.IsRunning() {
+				closed = append(closed, xmuxManager)
+				delete(globalDialerMap, key)
+			}
+		}
+		globalDialerAccess.Unlock()
+		for _, xmuxManager := range closed {
+			xmuxManager.Close()
+		}
+	}
 }
 
 func decideHTTPVersion(tlsConfig *tls.Config, realityConfig *reality.Config) string {

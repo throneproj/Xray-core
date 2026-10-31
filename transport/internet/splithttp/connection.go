@@ -23,12 +23,14 @@ func (c *splitConn) Read(b []byte) (int, error) {
 }
 
 func (c *splitConn) Close() error {
+	err := c.writer.Close()
+	err2 := c.reader.Close()
+
+	// after the streams are torn down, so a retired client finds its conn idle and can close it
 	if c.onClose != nil {
 		c.onClose()
 	}
 
-	err := c.writer.Close()
-	err2 := c.reader.Close()
 	if err != nil {
 		return err
 	}
