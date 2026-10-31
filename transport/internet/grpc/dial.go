@@ -12,6 +12,7 @@ import (
 	"github.com/xtls/xray-core/common/net"
 	"github.com/xtls/xray-core/common/session"
 	"github.com/xtls/xray-core/common/utils"
+	"github.com/xtls/xray-core/core"
 	"github.com/xtls/xray-core/transport/internet"
 	"github.com/xtls/xray-core/transport/internet/grpc/encoding"
 	"github.com/xtls/xray-core/transport/internet/reality"
@@ -43,10 +44,34 @@ type dialerConf struct {
 	*internet.MemoryStreamConfig
 }
 
+type clientConn struct {
+	*grpc.ClientConn
+	instance *core.Instance
+}
+
 var (
-	globalDialerMap    map[dialerConf]*grpc.ClientConn
+	globalDialerMap    map[dialerConf]*clientConn
 	globalDialerAccess sync.Mutex
 )
+
+// Keys hold the outbound's own stream settings, so a closed instance's entries are never looked up again
+func cleanDialers() {
+	ticker := time.NewTicker(time.Second)
+	for range ticker.C {
+		var closed []*clientConn
+		globalDialerAccess.Lock()
+		for key, client := range globalDialerMap {
+			if client.instance != nil && !client.instance.IsRunning() {
+				closed = append(closed, client)
+				delete(globalDialerMap, key)
+			}
+		}
+		globalDialerAccess.Unlock()
+		for _, client := range closed {
+			client.Close()
+		}
+	}
+}
 
 func dialgRPC(ctx context.Context, dest net.Destination, streamSettings *internet.MemoryStreamConfig) (net.Conn, error) {
 	grpcSettings := streamSettings.ProtocolSettings.(*Config)
@@ -79,14 +104,15 @@ func getGrpcClient(ctx context.Context, dest net.Destination, streamSettings *in
 	defer globalDialerAccess.Unlock()
 
 	if globalDialerMap == nil {
-		globalDialerMap = make(map[dialerConf]*grpc.ClientConn)
+		globalDialerMap = make(map[dialerConf]*clientConn)
+		go cleanDialers()
 	}
 	tlsConfig := tls.ConfigFromStreamSettings(streamSettings)
 	realityConfig := reality.ConfigFromStreamSettings(streamSettings)
 	grpcSettings := streamSettings.ProtocolSettings.(*Config)
 
 	if client, found := globalDialerMap[dialerConf{dest, streamSettings}]; found && client.GetState() != connectivity.Shutdown {
-		return client, nil
+		return client.ClientConn, nil
 	}
 
 	dialOptions := []grpc.DialOption{
@@ -206,8 +232,8 @@ func getGrpcClient(ctx context.Context, dest net.Destination, streamSettings *in
 		}
 		setUserAgent(conn, userAgent)
 		conn.Connect()
+		globalDialerMap[dialerConf{dest, streamSettings}] = &clientConn{conn, core.FromContext(ctx)}
 	}
-	globalDialerMap[dialerConf{dest, streamSettings}] = conn
 	return conn, err
 }
 

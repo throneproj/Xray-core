@@ -110,3 +110,46 @@ func TestGetExistingXmuxClient(t *testing.T) {
 		}
 	}
 }
+
+type closeCounter struct {
+	closed int
+}
+
+func (c *closeCounter) IsClosed() bool {
+	return false
+}
+
+func (c *closeCounter) Close() error {
+	c.closed++
+	return nil
+}
+
+func TestClose(t *testing.T) {
+	xmuxConfig := XmuxConfig{
+		MaxConnections: &RangeConfig{From: 2, To: 2},
+	}
+
+	xmuxManager := NewXmuxManager(xmuxConfig, func() XmuxConn {
+		return &closeCounter{}
+	})
+
+	idle := xmuxManager.GetXmuxClient(context.Background())
+	running := xmuxManager.GetXmuxClient(context.Background())
+	running.AddRunning()
+
+	xmuxManager.Close()
+
+	if closed := idle.XmuxConn.(*closeCounter).closed; closed != 1 {
+		t.Error("idle client closed ", closed, " times, want 1")
+	}
+	if closed := running.XmuxConn.(*closeCounter).closed; closed != 0 {
+		t.Error("running client closed before its request was done")
+	}
+	running.DoneRunning()
+	if closed := running.XmuxConn.(*closeCounter).closed; closed != 1 {
+		t.Error("running client closed ", closed, " times after its request was done, want 1")
+	}
+	if xmuxManager.GetExistingXmuxClient(context.Background()) != nil {
+		t.Error("got a client from a closed manager")
+	}
+}

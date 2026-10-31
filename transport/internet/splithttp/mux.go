@@ -10,6 +10,7 @@ import (
 
 	"github.com/xtls/xray-core/common"
 	"github.com/xtls/xray-core/common/errors"
+	"github.com/xtls/xray-core/core"
 )
 
 type XmuxConn interface {
@@ -47,6 +48,7 @@ type XmuxManager struct {
 	connections int32
 	newConnFunc func() XmuxConn
 	xmuxClients []*XmuxClient
+	instance    *core.Instance
 }
 
 func NewXmuxManager(xmuxConfig XmuxConfig, newConnFunc func() XmuxConn) *XmuxManager {
@@ -76,6 +78,15 @@ func (m *XmuxManager) newXmuxClient() *XmuxClient {
 	}
 	m.xmuxClients = append(m.xmuxClients, xmuxClient)
 	return xmuxClient
+}
+
+// Close retires every client, each one closes once its running requests are done
+func (m *XmuxManager) Close() {
+	for _, xmuxClient := range m.xmuxClients {
+		xmuxClient.NotUsed.Store(true)
+		xmuxClient.maybeClose()
+	}
+	m.xmuxClients = nil
 }
 
 func (m *XmuxManager) GetXmuxClient(ctx context.Context) *XmuxClient { // when locking
