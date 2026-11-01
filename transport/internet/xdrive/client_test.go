@@ -444,8 +444,8 @@ func TestServiceClientHTTP1(t *testing.T) {
 				return
 			}
 			resp.Body.Close()
-			if resp.Proto != "HTTP/1.1" || resp.TLS.ECHAccepted != (c.config.EchConfigList != "") {
-				t.Errorf("server %v, ALPN %v: went over %s, ECH accepted %v", c.protos, c.seen, resp.Proto, resp.TLS.ECHAccepted)
+			if accepted, ok := echAccepted(resp); resp.Proto != "HTTP/1.1" || ok && accepted != (c.config.EchConfigList != "") {
+				t.Errorf("server %v, ALPN %v: went over %s, ECH accepted %v", c.protos, c.seen, resp.Proto, accepted)
 			}
 		}
 
@@ -594,8 +594,7 @@ func TestServiceClientKeepAlive(t *testing.T) {
 	for period, want := range map[int64]time.Duration{0: xnet.ChromeH2KeepAlivePeriod, 20: 20 * time.Second, -1: 0} {
 		settings := &internet.MemoryStreamConfig{ProtocolSettings: &Config{Xmux: &splithttp.XmuxConfig{HKeepAlivePeriod: period}}}
 		client := newServiceClient(context.Background(), new(sync.Map), settings, 5*time.Second, 8)
-		h2 := client.Transport.(*serviceTransport).secure.(*secureTransport).h2.(*http.Transport)
-		if got := h2.HTTP2.SendPingTimeout; got != want {
+		if got := h2PingTimeout(client); got != want {
 			t.Errorf("hKeepAlivePeriod %d pings after %v, want %v", period, got, want)
 		}
 	}
