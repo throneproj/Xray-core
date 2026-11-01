@@ -230,7 +230,7 @@ func newServiceClient(connCtx context.Context, h1Hosts *sync.Map, streamSettings
 		}
 	}
 
-	var https http.RoundTripper = &secureTransport{h2: secure(1), h1: secure(maxConns), h1Hosts: h1Hosts}
+	var https http.RoundTripper = newSecureTransport(secure, dialTLS, keepAlive, maxConns, h1Hosts)
 	// no server offers h3 by ALPN over TCP, so it is used only when asked for alone
 	if slices.Equal(tlsConfig.NextProtocol, []string{"h3"}) {
 		quicParams := streamSettings.QuicParams
