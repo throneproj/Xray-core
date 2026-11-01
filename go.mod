@@ -16,7 +16,7 @@ require (
 	github.com/miekg/dns v1.1.73
 	github.com/pelletier/go-toml v1.9.5
 	github.com/pion/stun/v3 v3.1.7
-	github.com/pires/go-proxyproto v0.16.0
+	github.com/pires/go-proxyproto v0.15.0
 	github.com/refraction-networking/utls v1.8.3-0.20261108164504-a13c59ffe98b
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/stretchr/testify v1.12.1
