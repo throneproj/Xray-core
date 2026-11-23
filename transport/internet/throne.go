@@ -60,6 +60,8 @@ import (
 // (validation, latency/URL tests) simply dial unbound and unmarked, exactly as
 // before this mechanism existed.
 type ThroneWiring struct {
+	// Set at construction for short-lived probe instances, before workers can detach.
+	Lifetime     context.Context
 	mu           sync.RWMutex
 	iface        string
 	mark         uint32

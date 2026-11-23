@@ -47,6 +47,9 @@ func RegisterTransportDialer(protocol string, dialer dialFunc) error {
 
 // Dial dials a internet connection towards the given destination.
 func Dial(ctx context.Context, dest net.Destination, streamSettings *MemoryStreamConfig) (stat.Connection, error) {
+	if w := ThroneWiringFromContext(ctx); w != nil && w.Lifetime != nil && w.Lifetime.Err() != nil {
+		return nil, w.Lifetime.Err()
+	}
 	if dest.Network == net.Network_TCP {
 		if streamSettings == nil {
 			s, err := ToMemoryStreamConfig(nil)
@@ -247,6 +250,28 @@ func checkAddressPortStrategy(ctx context.Context, dest net.Destination, sockopt
 
 // DialSystem calls system dialer to create a network connection.
 func DialSystem(ctx context.Context, dest net.Destination, sockopt *SocketConfig) (net.Conn, error) {
+	wiring := ThroneWiringFromContext(ctx)
+	if wiring == nil || wiring.Lifetime == nil {
+		return dialSystem(ctx, dest, sockopt, wiring)
+	}
+	owner := wiring.Lifetime
+	if err := owner.Err(); err != nil {
+		return nil, err
+	}
+	// Mux, DNS and HTTP transports can dial with a detached request context.
+	dialCtx, cancel := context.WithCancel(ctx)
+	stop := context.AfterFunc(owner, cancel)
+	defer stop()
+	defer cancel()
+	conn, err := dialSystem(dialCtx, dest, sockopt, wiring)
+	if conn != nil {
+		// A transport may already be waiting for a handshake on the returned socket.
+		context.AfterFunc(owner, func() { conn.Close() })
+	}
+	return conn, err
+}
+
+func dialSystem(ctx context.Context, dest net.Destination, sockopt *SocketConfig, wiring *ThroneWiring) (net.Conn, error) {
 	var src net.Address
 	outbounds := session.OutboundsFromContext(ctx)
 	var outboundName string
@@ -266,7 +291,6 @@ func DialSystem(ctx context.Context, dest net.Destination, sockopt *SocketConfig
 	// DNS resolver), injected onto the instance after core.New. It is nil for
 	// validation and latency/URL-test instances, which fall back to the plain
 	// dial path below.
-	wiring := ThroneWiringFromContext(ctx)
 	var (
 		throneResolver dns.Client
 		throneStrategy DomainStrategy
@@ -328,6 +352,9 @@ func DialSystem(ctx context.Context, dest net.Destination, sockopt *SocketConfig
 			finalStrategy = finalStrategy.GetDynamicStrategy(origTargetAddr.Family())
 		}
 		ips, err := LookupForIPWithClient(resolveClient, dest.Address.Domain(), finalStrategy, src)
+		if wiring != nil && wiring.Lifetime != nil && wiring.Lifetime.Err() != nil {
+			return nil, wiring.Lifetime.Err()
+		}
 		if err != nil {
 			errors.LogErrorInner(ctx, err, "failed to resolve ip")
 			if resolveStrategy.ForceIP() {

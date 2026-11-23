@@ -172,19 +172,23 @@ func OptionalFeatures(ctx context.Context, callback interface{}) error {
 // The instance is not started at this point.
 // To ensure Xray instance works properly, the config must contain one Dispatcher, one InboundHandlerManager and one OutboundHandlerManager. Other features are optional.
 func New(config *Config) (*Instance, error) {
-	server := &Instance{ctx: context.Background()}
-
-	done, err := initInstanceWithConfig(config, server)
-	if done {
-		return nil, err
-	}
-
-	return server, nil
+	return NewWithContext(context.Background(), config)
 }
 
 func NewWithContext(ctx context.Context, config *Config) (*Instance, error) {
-	server := &Instance{ctx: ctx}
+	return newWithWiring(ctx, config, &internet.ThroneWiring{})
+}
 
+// NewProbe creates a short-lived instance whose pending dials and sockets are retired when ctx is canceled.
+func NewProbe(ctx context.Context, config *Config) (*Instance, error) {
+	if ctx.Done() == nil {
+		return nil, errors.New("a probe needs a cancellable context")
+	}
+	return newWithWiring(ctx, config, &internet.ThroneWiring{Lifetime: ctx})
+}
+
+func newWithWiring(ctx context.Context, config *Config, wiring *internet.ThroneWiring) (*Instance, error) {
+	server := &Instance{ctx: ctx, throneWiring: wiring}
 	done, err := initInstanceWithConfig(config, server)
 	if done {
 		return nil, err
@@ -203,7 +207,6 @@ func initInstanceWithConfig(config *Config, server *Instance) (bool, error) {
 	// Seed the Throne egress wiring before any handler is created, so every
 	// handler's context (and thus every dial context derived from it) carries
 	// the pointer. The application populates it after New via the Set* methods.
-	server.throneWiring = &internet.ThroneWiring{}
 	server.ctx = internet.ContextWithThroneWiring(server.ctx, server.throneWiring)
 
 	for _, appSettings := range config.App {
