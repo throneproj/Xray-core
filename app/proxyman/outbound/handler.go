@@ -145,7 +145,7 @@ func NewHandler(ctx context.Context, config *core.OutboundHandlerConfig) (outbou
 				config.Concurrency = 128
 			}
 			if config.Concurrency > 0 {
-				h.mux = h.newMuxClient(proxyHandler, config.Concurrency, config.MaxConnections)
+				h.mux = h.newMuxClient(ctx, proxyHandler, config.Concurrency, config.MaxConnections)
 			}
 			if config.XudpConcurrency < 0 {
 				h.xudp = &mux.ClientManager{Enabled: false}
@@ -154,7 +154,7 @@ func NewHandler(ctx context.Context, config *core.OutboundHandlerConfig) (outbou
 				h.xudp = nil // same as before
 			}
 			if config.XudpConcurrency > 0 {
-				h.xudp = h.newMuxClient(proxyHandler, config.XudpConcurrency, config.MaxConnections)
+				h.xudp = h.newMuxClient(ctx, proxyHandler, config.XudpConcurrency, config.MaxConnections)
 			}
 			h.udp443 = config.XudpProxyUDP443
 		}
@@ -164,10 +164,11 @@ func NewHandler(ctx context.Context, config *core.OutboundHandlerConfig) (outbou
 	return h, nil
 }
 
-func (h *Handler) newMuxClient(p proxy.Outbound, concurrency, maxConnections int32) *mux.ClientManager {
+func (h *Handler) newMuxClient(ctx context.Context, p proxy.Outbound, concurrency, maxConnections int32) *mux.ClientManager {
 	factory := &mux.DialingWorkerFactory{
-		Proxy:  p,
-		Dialer: h,
+		Context: core.ToBackgroundDetachedContext(ctx),
+		Proxy:   p,
+		Dialer:  h,
 		Strategy: mux.ClientStrategy{
 			MaxConcurrency: uint32(concurrency),
 			MaxConnection:  1024,
