@@ -1,6 +1,7 @@
 package mux
 
 import (
+	"cmp"
 	"context"
 	goerrors "errors"
 	"io"
@@ -153,6 +154,7 @@ type ClientWorkerFactory interface {
 }
 
 type DialingWorkerFactory struct {
+	Context  context.Context
 	Proxy    proxy.Outbound
 	Dialer   internet.Dialer
 	Strategy ClientStrategy
@@ -175,7 +177,8 @@ func (f *DialingWorkerFactory) Create() (*ClientWorker, error) {
 		outbounds := []*session.Outbound{{
 			Target: net.TCPDestination(muxCoolAddress, muxCoolPort),
 		}}
-		ctx := session.ContextWithOutbounds(context.Background(), outbounds)
+		baseCtx := cmp.Or(f.Context, context.Background())
+		ctx := session.ContextWithOutbounds(baseCtx, outbounds)
 		ctx, cancel := context.WithCancel(ctx)
 
 		if errP := p.Process(ctx, &transport.Link{Reader: uplinkReader, Writer: downlinkWriter}, d); errP != nil {

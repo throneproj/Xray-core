@@ -57,6 +57,8 @@ type Handler struct {
 	testpre  uint32
 	initpre  sync.Once
 	preConns chan *ConnExpire
+	preCtx   context.Context
+	stopPre  context.CancelFunc
 }
 
 type ConnExpire struct {
@@ -127,14 +129,18 @@ func New(ctx context.Context, config *Config) (*Handler, error) {
 	}
 
 	handler.testpre = a.Testpre
+	if handler.testpre > 0 && handler.reverse == nil {
+		handler.preCtx, handler.stopPre = context.WithCancel(ctx)
+		handler.preConns = make(chan *ConnExpire)
+	}
 
 	return handler, nil
 }
 
 // Close implements common.Closable.Close().
 func (h *Handler) Close() error {
-	if h.preConns != nil {
-		close(h.preConns)
+	if h.stopPre != nil {
+		h.stopPre()
 	}
 	if h.reverse != nil {
 		return h.reverse.Close()
@@ -154,29 +160,44 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
 	rec := h.server
 	var conn stat.Connection
 
-	if h.testpre > 0 && h.reverse == nil {
+	if h.preConns != nil {
 		h.initpre.Do(func() {
-			h.preConns = make(chan *ConnExpire)
 			for range h.testpre { // TODO: randomize
 				go func() {
-					defer func() { recover() }()
-					ctx := xctx.ContextWithID(context.Background(), session.NewID())
-					for {
+					ctx := xctx.ContextWithID(h.preCtx, session.NewID())
+					ctx = session.ContextWithOutbounds(ctx, []*session.Outbound{{Target: rec.Destination}})
+					for ctx.Err() == nil {
 						conn, err := dialer.Dial(ctx, rec.Destination)
 						if err != nil {
+							if ctx.Err() != nil {
+								return
+							}
 							errors.LogWarningInner(ctx, err, "pre-connect failed")
-							continue
+						} else {
+							select {
+							case h.preConns <- &ConnExpire{Conn: conn, Expire: time.Now().Add(2 * time.Minute)}:
+							case <-ctx.Done():
+								conn.Close()
+								return
+							}
 						}
-						h.preConns <- &ConnExpire{Conn: conn, Expire: time.Now().Add(time.Minute * 2)} // TODO: customize & randomize
-						time.Sleep(time.Millisecond * 200)                                             // TODO: customize & randomize
+						select {
+						case <-ctx.Done():
+							return
+						case <-time.After(200 * time.Millisecond):
+						}
 					}
 				}()
 			}
 		})
 		for {
-			connTime := <-h.preConns
-			if connTime == nil {
+			var connTime *ConnExpire
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-h.preCtx.Done():
 				return errors.New("closed handler")
+			case connTime = <-h.preConns:
 			}
 			if time.Now().Before(connTime.Expire) {
 				conn = connTime.Conn
